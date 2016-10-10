@@ -1,0 +1,170 @@
+# Declare host IPs here
+FOO_IP=$(cat /etc/hosts|grep 'foo '|sed -e 's/\s.*//g')
+BAR_IP=$(cat /etc/hosts|grep 'bar '|sed -e 's/\s.*//g')
+DUMMY_IP=192.168.31.45
+
+
+function setup_rules_and_policies {
+
+
+	printf "\n"
+	echo "Bandwidth control:"
+	echo "------------------"
+
+	###############################################################
+	# Bandwidth control matrices specify how bandwidth should be 
+	# prioritized in case of contention.
+	# More classes can be added
+	# Min and Max rates are percentages of CEIL
+	# Make sure that:
+	# - ID is unique (per matrix)
+	# - the first ID is always called '1:10'
+	# - the total of all 'min rate' values equals 100
+	# - none of the 'max rate' values exceeds 100
+	# 
+	# The first class (1:10) will be the default class for all
+	# traffic in that direction, unless it is classified otherwise
+	# in a subsequent 'classify' rule
+	#
+	###############################################################
+
+
+		##########################
+		# Download bandwidth rules
+		##########################
+
+
+		# DOWNLOAD_CEIL (kbit/s) will never be exceeded
+		DOWNLOAD_CEIL=40000
+
+		printf "\n"
+		printf "\tDownload classes (CEIL = $DOWNLOAD_CEIL kbit/s): \n"
+		printf "\t--------------------------------------- \n"
+
+
+		DOWNLOAD_CLASSES=(
+		#			ID		priority	min rate	max rate
+					1:10		0		5		20
+					1:11		1		25		100
+					1:12		2		50		100
+					1:13		2		20		100
+				)
+		initialize_bw_classes download;
+
+		printf "\n"
+		printf "\tDownload rules: \n"
+		printf "\t--------------- \n"
+
+		# Order matters here - *LAST* matching rule wins
+
+		# By default, regular traffic goes to the regular lane
+		classify_download_by_host $LOCAL_SUBNET 1:12
+
+
+		# Let's make web browsing faster and more responsive!
+		classify_download_from_port tcp 80 1:11
+		classify_download_from_port tcp 443 1:11
+
+		# SSH too!
+		classify_download_from_port tcp 22 1:11
+
+		# Downloads by 'dummy' are low priority
+		classify_download_by_host $DUMMY_IP 1:13
+
+		# Downloads by 'foo' are high priority
+		classify_download_by_host $FOO_IP 1:11
+
+
+
+
+		##########################
+		# Upload bandwidth rules
+		##########################
+
+
+		# UPLOAD_CEIL (kbit/s) will never be exceeded
+		UPLOAD_CEIL=8000
+
+		printf "\n"
+		printf "\tUpload classes (CEIL = $UPLOAD_CEIL kbit/s):\n"
+		printf "\t------------------------------------ \n"
+
+		UPLOAD_CLASSES=(
+		#			ID		priority	min rate	max rate
+					1:10		0		5		20
+					1:11		1		15		85
+					1:12		2		55		100
+					1:13		2		20		100
+					1:14		3		5		50
+				)
+		initialize_bw_classes upload;
+
+
+		printf "\n"
+		printf "\tUpload rules: \n"
+		printf "\t------------- \n"
+
+		# Order matters here - *LAST* matching rule wins
+
+
+		# By default, regular traffic goes to the regular lane
+		classify_upload_from_host $LOCAL_SUBNET 1:12
+
+		# We're hosting HTTP servers, let's keep our users happy
+		classify_upload_from_port tcp 80 1:11
+		classify_upload_from_port tcp 443 1:11
+
+		# BAR is a dedicated torrent server
+		# so its uploads are low priority (and capped)
+		classify_upload_from_host $BAR_IP 1:14
+
+
+
+
+
+
+
+
+
+
+
+
+
+		############################
+		# Incoming connection limits
+		############################
+
+		printf "\n\n"
+		printf "\tIncoming connection limits: \n"
+		printf "\t--------------------------- \n"
+
+		# limit attacks on our SSH (22) port
+		limit_connections_to_public_port tcp 22 10/min
+
+		# limit attacks on our main server
+		limit_connections_to_internal_host $FOO_IP 200/min
+
+		printf "\n"
+
+
+
+
+	echo "Port duplication:"
+	echo "-----------------"
+
+	# Duplicate SSH to port 8080 as that's one of the most commonly unblocked ports
+	# (I would duplicate to 80 and 443 as well, but I need to forward those)
+	duplicate_port tcp 22 8080
+
+
+
+
+	printf "\n"
+	echo "Port forwarding:"
+	echo "----------------"
+
+	# FOO is hosting an HTTP server, so lets forward ports 80 and 443
+	forward tcp    80  $FOO_IP:80
+	forward tcp   443  $FOO_IP:443
+
+}

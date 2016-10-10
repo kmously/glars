@@ -15,11 +15,11 @@
 #                            |  |   | eth0  |    |                           |
 #                            |  |   |       |    |                           |
 #                            |  |   +-------+    |     +-----------------+   |
-#                    +---------->       +        |     |                 |   |
-#       Local Network        |  |   +-------+    |     |                 +-------------->
-#                    <----------+   |       |    |     |   $EXTERNAL_IF  |   |          Internet
-#                            |  |   | wlan0 |    |     |                 <--------------+
-#                            |  |   |       |    |     |                 |   |
+#                            |  |       +        |     |                 |   |
+#                            |  |   +-------+    |     |                 +-------------->
+#                    +---------->   |       |    |     |   $EXTERNAL_IF  |   |          Internet
+#       Local Network        |  |   | wlan0 |    |     |                 <--------------+
+#                    <----------+   |       |    |     |                 |   |
 #                            |  |   +-------+    |     +-----------------+   |
 #                            |  |       +        |                           |
 #                            |  |   +-------+    |                           |
@@ -51,7 +51,7 @@ PINK="\033[$BOLD;35m"
 CYAN="\033[$BOLD;36m"
 WHITE="\033[$BOLD;37m"
 
-# Comment out these 2 vars if you dont want colors
+# Comment out these 2 vars if you dont want colors in the output
 COLOR=$GREEN
 COLOREND="\033[0m"
 
@@ -61,19 +61,26 @@ EXTERNAL_IF=eth1
 # This is the interface that is connected to the internal network
 # If you are bridging multiple interfaces (wifi, VPN, etc.), then
 # use the bridge interface here.
-# The bridge must be created BEFORE running this script
+# The bridge must exist BEFORE running this script
 INTERNAL_IF=br0
 
 # Define local subnet here
+# It is better to avoid common subnets, like 
+#
+# 192.168.0.0/24
+# 192.168.1.0/24
+# 192.168.10.0/24
+# 192.168.100.0/24
+#
+# ..to minimize chances of collision when setting up a VPN
 LOCAL_SUBNET=192.168.31.0/24
 
+
 # This is our public (external) IP
+# It can be explicitly specified if you know it in advance, or it can be 
+# queried, using for example 'ifconfig' or 'ip addr'
 PUBLIC_IP=$(ifconfig $EXTERNAL_IF|grep inet.*netmas|sed -e "s/netmask.*//g"|sed -e "s/.*inet.//g"|sed -e "s/ *//g")
 
-# Declare host IPs here
-FOO_IP=$(cat /etc/hosts|grep 'foo '|sed -e 's/\s.*//g')
-BAR_IP=$(cat /etc/hosts|grep 'bar '|sed -e 's/\s.*//g')
-DUMMY_IP=192.168.31.45
 
 
 # (Optional) Specify text file containing blacklisted IPs
@@ -87,179 +94,38 @@ DUMMY_IP=192.168.31.45
 # You can use as many as you want, they won't affect iptables rules
 # and will be efficiently matched.
 #
-IP_BLACKLIST_FILE=/etc/ip_blacklist.txt
-
+IP_BLACKLIST_FILE=/etc/glars/blacklist
 
 
 #
-# Rules and policies go here
+# (Optional) Specify a rules file
+#
+# Advanced functionality and settings, such as port forwarding,
+# and bandwidth control can be specified in $RULES_FILE
+# All variables declared above can also be overridden in $RULES_FILE
+# See the example rules files for more information on how to use them.
 #
 
-function setup_rules_and_policies {
+RULES_FILE=/etc/glars/rules
 
 
-	printf "\n"
-	echo "Bandwidth control:"
-	echo "------------------"
-
-	###############################################################
-	# Bandwidth control matrices specify how bandwidth should be 
-	# prioritized in case of contention.
-	# More classes can be added
-	# Min and Max rates are percentages of CEIL
-	# Make sure that:
-	# - ID is unique (per matrix)
-	# - the first ID is always called '1:10'
-	# - the total of all 'min rate' values equals 100
-	# - none of the 'max rate' values exceeds 100
-	# 
-	# The first class (1:10) will be the default class for all
-	# traffic in that direction, unless it is classified otherwise
-	# in a subsequent 'classify' rule
-	#
-	###############################################################
-
-
-		##########################
-		# Download bandwidth rules
-		##########################
-
-
-		# DOWNLOAD_CEIL (kbit/s) will never be exceeded
-		DOWNLOAD_CEIL=40000
-
-		printf "\n"
-		printf "\tDownload classes (CEIL = $DOWNLOAD_CEIL kbit/s): \n"
-		printf "\t--------------------------------------- \n"
-
-
-		DOWNLOAD_CLASSES=(
-		#			ID		priority	min rate	max rate
-					1:10		0		5		20
-					1:11		1		25		100
-					1:12		2		50		100
-					1:13		2		20		100
-				)
-		initialize_bw_classes download;
-
-		printf "\n"
-		printf "\tDownload rules: \n"
-		printf "\t--------------- \n"
-
-		# Order matters here - *LAST* matching rule wins
-
-		# By default, regular traffic goes to the regular lane
-		classify_download_by_host $LOCAL_SUBNET 1:12
-
-
-		# Let's make web browsing faster and more responsive!
-		classify_download_from_port tcp 80 1:11
-		classify_download_from_port tcp 443 1:11
-
-		# SSH too!
-		classify_download_from_port tcp 22 1:11
-
-		# Downloads by 'dummy' are low priority
-		classify_download_by_host $DUMMY_IP 1:13
-
-		# Downloads by 'foo' are high priority
-		classify_download_by_host $FOO_IP 1:11
-
-
-
-
-		##########################
-		# Upload bandwidth rules
-		##########################
-
-
-		# UPLOAD_CEIL (kbit/s) will never be exceeded
-		UPLOAD_CEIL=8000
-
-		printf "\n"
-		printf "\tUpload classes (CEIL = $UPLOAD_CEIL kbit/s):\n"
-		printf "\t------------------------------------ \n"
-
-		UPLOAD_CLASSES=(
-		#			ID		priority	min rate	max rate
-					1:10		0		5		20
-					1:11		1		15		85
-					1:12		2		55		100
-					1:13		2		20		100
-					1:14		3		5		50
-				)
-		initialize_bw_classes upload;
-
-
-		printf "\n"
-		printf "\tUpload rules: \n"
-		printf "\t------------- \n"
-
-		# Order matters here - *LAST* matching rule wins
-
-
-		# By default, regular traffic goes to the regular lane
-		classify_upload_from_host $LOCAL_SUBNET 1:12
-
-		# We're hosting HTTP servers, let's keep our users happy
-		classify_upload_from_port tcp 80 1:11
-		classify_upload_from_port tcp 443 1:11
-
-		# BAR is a dedicated torrent server
-		# so its uploads are low priority (and capped)
-		classify_upload_from_host $BAR_IP 1:14
-
-
-
-
-
-
-
-
-
-
-
-
-
-		############################
-		# Incoming connection limits
-		############################
-
-		printf "\n\n"
-		printf "\tIncoming connection limits: \n"
-		printf "\t--------------------------- \n"
-
-		# limit attacks on our SSH (22) port
-		limit_connections_to_public_port tcp 22 10/min
-
-		# limit attacks on our main server
-		limit_connections_to_internal_host $FOO_IP 200/min
-
-		printf "\n"
-
-
-
-
-	echo "Port duplication:"
-	echo "-----------------"
-
-	# Duplicate SSH to port 8080 as that's one of the most commonly unblocked ports
-	# (I would duplicate to 80 and 443 as well, but I need to forward those)
-	duplicate_port tcp 22 8080
-
-
-
-
-	printf "\n"
-	echo "Port forwarding:"
-	echo "----------------"
-
-	# FOO is hosting an HTTP server, so lets forward ports 80 and 443
-	forward tcp    80  $FOO_IP:80
-	forward tcp   443  $FOO_IP:443
-
-}
                                   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -287,7 +153,6 @@ function setup_rules_and_policies {
 # unless you want to see how the sausage is made
 #
 ########################################################
-
 
 
 
@@ -440,6 +305,17 @@ function classify_download_by_host {
 	printf "\t(dest ip)$COLOR  %30s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -o $INTERNAL_IF -d $1 -j CLASSIFY --set-class $2
 	}
+
+
+# Classify download traffic from a particular host on the Internet
+# to control bandwidth usage
+function classify_download_from_host {
+#	$1 = host or subnet
+#	$2 = class
+	printf "\t(source ip)$COLOR  %28s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
+	iptables -A FORWARD -o $INTERNAL_IF -s $1 -j CLASSIFY --set-class $2
+	}
+
 
 
 # Classify download traffic from a specific (remote) port
@@ -612,6 +488,10 @@ $COLOR
 ┗━┛┗━╸╹ ╹╹┗╸┗━┛   ┗┛ ╺┻╸╹┗━┛
 $COLOREND
 "
+	if [[ -f "$RULES_FILE" ]]; then
+		source $RULES_FILE
+	fi;
+
 	printf "Our public IP address is:$COLOR%20s $COLOREND\n" "$PUBLIC_IP"
 
 	clear_all_configurations;
@@ -620,7 +500,11 @@ $COLOREND
 
 	setup_blacklist;
 
-	setup_rules_and_policies;
+	if [[ -f "$RULES_FILE" ]]; then
+		setup_rules_and_policies;
+	else
+		printf "No rules specified\n"
+	fi;
 }
 
 main;
