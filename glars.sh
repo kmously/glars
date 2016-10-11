@@ -100,10 +100,11 @@ IP_BLACKLIST_FILE=/etc/glars/blacklist
 #
 # (Optional) Specify a rules file
 #
-# Advanced functionality and settings, such as port forwarding,
+# Advanced functionality and non-default settings, such as port forwarding,
 # and bandwidth control can be specified in $RULES_FILE
 # All variables declared above can also be overridden in $RULES_FILE
-# See the example rules files for more information on how to use them.
+# The $RULES_FILE must a setup_rules_and_policies() function
+# See the example rules files for more information on how to write a $RULES_FILE
 #
 
 RULES_FILE=/etc/glars/rules

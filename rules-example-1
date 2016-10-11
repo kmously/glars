@@ -1,0 +1,32 @@
+# Declare host IPs here
+FTPSERVER_IP=192.168.31.27
+HTTPSERVER_IP=$(cat /etc/hosts|grep 'httpserver '|sed -e 's/\s.*//g')
+
+
+function setup_rules_and_policies {
+
+	printf "\n"
+	echo "Port forwarding:"
+	echo "----------------"
+
+	# Forward ports 80 and 443 to HTTPSERVER
+	forward tcp    80  $HTTPSERVER_IP:80
+	forward tcp   443  $HTTPSERVER_IP:443
+
+	# Forward port 21 to FTPSERVER
+	forward tcp    21  $FTPSERVER_IP:21
+
+
+
+
+
+	echo "Port duplication:"
+	echo "-----------------"
+
+	# Our ISP blocks incoming port 22, which means we cannot SSH to 
+	# our router over the standard port.
+	# Let's duplicate port 22 to port 8080, which our ISP does NOT block
+	duplicate_port tcp 22 8080
+
+
+}
