@@ -41,28 +41,19 @@
 
 
 
-BOLD=1
-GREY="\033[$BOLD;30m"
-RED="\033[$BOLD;31m"
-GREEN="\033[$BOLD;32m"
-YELLOW="\033[$BOLD;33m"
-BLUE="\033[$BOLD;34m"
-PINK="\033[$BOLD;35m"
-CYAN="\033[$BOLD;36m"
-WHITE="\033[$BOLD;37m"
 
-# Comment out these 2 vars if you dont want colors in the output
-COLOR=$GREEN
-COLOREND="\033[0m"
-
-# This is the interface that's connected to the Internet
+# $EXTERNAL_IF is the interface that's connected to the Internet
 EXTERNAL_IF=eth1
 
-# This is the interface that is connected to the internal network
-# If you are bridging multiple interfaces (wifi, VPN, etc.), then
+
+
+# $INTERNAL_IF is the interface that is connected to the internal network
+# If you are bridging multiple interfaces on the LAN side (wifi, VPN, etc.), then
 # use the bridge interface here.
 # The bridge must exist BEFORE running this script
 INTERNAL_IF=br0
+
+
 
 # Define local subnet here
 # It is better to avoid common subnets, like 
@@ -76,10 +67,23 @@ INTERNAL_IF=br0
 LOCAL_SUBNET=192.168.31.0/24
 
 
+
 # This is our public (external) IP
-# It can be explicitly specified if you know it in advance, or it can be 
-# queried, using for example 'ifconfig' or 'ip addr'
+# It can be explicitly specified here if it is a static IP, or it can be 
+# queried from the $EXTERNAL_IF (using for example 'ifconfig' or 'ip addr')
+# if it is a dynamically assigned IP
 PUBLIC_IP=$(ifconfig $EXTERNAL_IF|grep inet.*netmas|sed -e "s/netmask.*//g"|sed -e "s/.*inet.//g"|sed -e "s/ *//g")
+
+
+
+# (Optional) Specify a rules file
+#
+# Advanced functionality and settings, such as port forwarding,
+# and bandwidth control can be specified in $RULES_FILE
+# All variables declared above can also be overridden in $RULES_FILE
+# The $RULES_FILE must define a function called setup_rules_and_policies()
+# See the example rules files for more information on how to use rules files.
+RULES_FILE=/etc/glars/rules
 
 
 
@@ -97,20 +101,23 @@ PUBLIC_IP=$(ifconfig $EXTERNAL_IF|grep inet.*netmas|sed -e "s/netmask.*//g"|sed 
 IP_BLACKLIST_FILE=/etc/glars/blacklist
 
 
-#
-# (Optional) Specify a rules file
-#
-# Advanced functionality and non-default settings, such as port forwarding,
-# and bandwidth control can be specified in $RULES_FILE
-# All variables declared above can also be overridden in $RULES_FILE
-# The $RULES_FILE must a setup_rules_and_policies() function
-# See the example rules files for more information on how to write a $RULES_FILE
-#
 
-RULES_FILE=/etc/glars/rules
+# (Optional) Set COLOR to one of
+#
+# green pink red blue grey yellow cyan white
+#
+# or unset it if you don't want colors in the output
+COLOR=white
 
 
-                                  
+
+# (Optional) Set BOLD to 1 if you want bold font in the output
+# Set to 0 if you do not want bold font in the output
+BOLD=1
+
+
+
+
 
 
 
@@ -150,7 +157,7 @@ RULES_FILE=/etc/glars/rules
 
 ########################################################
 #
-# You don't need to look at the stuff below,
+# You don't need to look beyond here,
 # unless you want to see how the sausage is made
 #
 ########################################################
@@ -207,6 +214,97 @@ RULES_FILE=/etc/glars/rules
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GREY="\033[$BOLD;30m"
+RED="\033[$BOLD;31m"
+GREEN="\033[$BOLD;32m"
+YELLOW="\033[$BOLD;33m"
+BLUE="\033[$BOLD;34m"
+PINK="\033[$BOLD;35m"
+CYAN="\033[$BOLD;36m"
+WHITE="\033[$BOLD;37m"
+
+COLOREND="\033[0m"
+
+
+
+
+if [ "$COLOR" = "green" ] ; then
+	COLOR=$GREEN
+	COLOREND="\033[0m"
+elif [ "$COLOR" = "grey" ] ; then
+	COLOR=$GREY
+	COLOREND="\033[0m"
+elif [ "$COLOR" = "red" ] ; then
+	COLOR=$RED
+	COLOREND="\033[0m"
+elif [ "$COLOR" = "yellow" ] ; then
+	COLOR=$YELLOW
+	COLOREND="\033[0m"
+elif [ "$COLOR" = "blue" ] ; then
+	COLOR=$BLUE
+	COLOREND="\033[0m"
+elif [ "$COLOR" = "pink" ] ; then
+	COLOR=$PINK
+	COLOREND="\033[0m"
+elif [ "$COLOR" = "cyan" ] ; then
+	COLOR=$CYAN
+	COLOREND="\033[0m"
+elif [ "$COLOR" = "white" ] ; then
+	COLOR=$WHITE
+	COLOREND="\033[0m"
+else
+	if [ "$BOLD" = "1" ]; then
+		COLOR="\033[1m "
+		COLOREND="\033[0m"
+	else
+		COLOREND=
+		COLOR=
+	fi
+fi;
 
 
 
@@ -459,9 +557,11 @@ function setup_blacklist {
 	IP_COUNT=0
 	# Ignore blacklisted IPs
 	if [[ -f "$IP_BLACKLIST_FILE" ]]; then
-		echo -en "Setting blacklist from $COLOR $IP_BLACKLIST_FILE $COLOREND..."
+		echo -en "\nSetting blacklist from $COLOR $IP_BLACKLIST_FILE $COLOREND..."
 		ipset -N banned_ips nethash
-		iptables -A INPUT -i $EXTERNAL_IF -m set --match-set banned_ips src -j DROP
+		# Normally we do -A (append), but make an exception for blacklisted IPs
+		# to drop them earlier
+		iptables -I INPUT -i $EXTERNAL_IF -m set --match-set banned_ips src -j DROP
 		for i in `cat $IP_BLACKLIST_FILE`; do 
 			# echo "Blacklisting $i"
 			IP_COUNT=$(($IP_COUNT+1))
@@ -484,9 +584,9 @@ function main {
 	echo -e \
 "
 $COLOR
-┏━╸╻  ┏━┓┏━┓┏━┓   ╻ ╻╺┓  ╺┓ 
-┃╺┓┃  ┣━┫┣┳┛┗━┓   ┃┏┛ ┃   ┃ 
-┗━┛┗━╸╹ ╹╹┗╸┗━┛   ┗┛ ╺┻╸╹╺┻╸
+┏━╸╻  ┏━┓┏━┓┏━┓   ╻ ╻╺┓  ┏━┓
+┃╺┓┃  ┣━┫┣┳┛┗━┓   ┃┏┛ ┃  ┃┃┃
+┗━┛┗━╸╹ ╹╹┗╸┗━┛   ┗┛ ╺┻╸╹┗━┛
 $COLOREND
 "
 	if [[ -f "$RULES_FILE" ]]; then
@@ -499,13 +599,13 @@ $COLOREND
 
 	setup_gateway;
 
-	setup_blacklist;
-
 	if [[ -f "$RULES_FILE" ]]; then
 		setup_rules_and_policies;
 	else
 		printf "No rules specified\n"
 	fi;
+
+	setup_blacklist;
 }
 
 main;
