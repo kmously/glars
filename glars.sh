@@ -70,7 +70,7 @@ LOCAL_SUBNET=192.168.31.0/24
 
 # This is our public (external) IP
 # It can be explicitly specified here if it is a static IP, or it can be 
-# queried from the $EXTERNAL_IF (using for example 'ifconfig' or 'ip addr')
+# queried from the $EXTERNAL_IF, using for example 'ifconfig' or 'ip addr'
 # if it is a dynamically assigned IP
 PUBLIC_IP=$(ifconfig $EXTERNAL_IF|grep inet.*netmas|sed -e "s/netmask.*//g"|sed -e "s/.*inet.//g"|sed -e "s/ *//g")
 
@@ -88,14 +88,17 @@ RULES_FILE=/etc/glars/rules
 
 
 # (Optional) Specify text file containing blacklisted IPs
-# The file must contain ONLY IP ranges in CIDR notation
+# The file must contain IP ranges in CIDR notation
 #
 # e.g. w.x.y.z/24
 #
 # To ban a single IP, use /32 subnet
 #
-# One CIDR IP per line, no comments or anything else allowed
-# You can use as many as you want, they won't affect iptables rules
+# One CIDR IP per line
+# Empty lines are allowed
+# Lines starting with # are ignored
+#
+# You can use as many IPs/subnets as you want, they won't affect iptables rules
 # and will be efficiently matched.
 #
 IP_BLACKLIST_FILE=/etc/glars/blacklist
@@ -111,12 +114,15 @@ COLOR=white
 
 
 
-# (Optional) Set BOLD to 1 if you want bold font in the output
-# Set to 0 if you do not want bold font in the output
+# (Optional) Set to 1 if you want BOLD in the output
+# Set to 0 if you do not want BOLD in the output
 BOLD=1
 
 
 
+# (Optional) Enable logging
+# ('dmesg|grep GLARS' to see logs)
+LOG=1
 
 
 
@@ -513,6 +519,9 @@ function limit_connections_to_public_port {
 #	$3 ratelimit
 	printf "\tlimiting (public port)$COLOR %18s $COLOREND ------> $COLOR $3 $COLOREND\n" "($1)  :$2"
 	iptables -A INPUT -i $EXTERNAL_IF -m hashlimit -p $1 --dport $2 --hashlimit $3 --hashlimit-mode srcip --hashlimit-name ssh -m state --state new -j ACCEPT
+	if [ $LOG = 1 ] ; then
+		iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW  -j LOG --log-prefix "GLARS: DropPktToPublicPort: "
+	fi
 	iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW -j DROP
 }
 
@@ -537,7 +546,10 @@ function limit_connections_to_internal_host {
 #	$1 host to protect
 #	$2 ratelimit of allowed connections to host
 	printf "\tlimiting (dest host)$COLOR %20s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
-	iptables -A FORWARD -m hashlimit -p tcp -d $1 ! -s $LOCAL_SUBNET --hashlimit $2 --hashlimit-mode dstip --hashlimit-name "connections_to_host_$1" -m state --state new -j ACCEPT
+	iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state new -m hashlimit --hashlimit $2 --hashlimit-name $1  -j ACCEPT
+	if [ $LOG = 1 ] ; then
+		iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -j LOG --log-prefix "GLARS: DropPktToInternalHost: "
+	fi;
 	iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -j DROP
 }
 
@@ -550,6 +562,9 @@ function limit_connections_to_internal_port {
 #	$3 ratelimit of allowed connections to internal port
 	printf "\tlimiting (private port)$COLOR %17s $COLOREND ------> $COLOR $3 $COLOREND\n" "($1)  :$2"
 	iptables -A FORWARD -m hashlimit -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET --hashlimit $3 --hashlimit-mode dstip --hashlimit-name "connections_to_forwarded_port_$1_$2" -m state --state new -j ACCEPT
+	if [ $LOG = 1 ] ; then
+		iptables -A FORWARD -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET -m state --state new -j LOG --log-prefix "GLARS: DropPktToInternalPort: "
+	fi;
 	iptables -A FORWARD -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET -m state --state new -j DROP
 }
 
@@ -562,7 +577,12 @@ function setup_blacklist {
 		# Normally we do -A (append), but make an exception for blacklisted IPs
 		# to drop them earlier
 		iptables -I INPUT -i $EXTERNAL_IF -m set --match-set banned_ips src -j DROP
-		for i in `cat $IP_BLACKLIST_FILE`; do 
+		iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set banned_ips src -j DROP
+		if [ $LOG = 1 ] ; then
+			iptables -I INPUT -i $EXTERNAL_IF -m set --match-set banned_ips src -j LOG --log-prefix "GLARS: DropBlacklistedIPOnInput: "
+			iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set banned_ips src -j LOG --log-prefix "GLARS: DropBlacklistIPOnFwd: "
+		fi;
+		for i in `cat $IP_BLACKLIST_FILE|grep -v "\s*#"`; do 
 			# echo "Blacklisting $i"
 			IP_COUNT=$(($IP_COUNT+1))
 			ipset -A banned_ips $i
@@ -584,11 +604,12 @@ function main {
 	echo -e \
 "
 $COLOR
-┏━╸╻  ┏━┓┏━┓┏━┓   ╻ ╻╺┓  ┏━┓
-┃╺┓┃  ┣━┫┣┳┛┗━┓   ┃┏┛ ┃  ┃┃┃
-┗━┛┗━╸╹ ╹╹┗╸┗━┛   ┗┛ ╺┻╸╹┗━┛
+┏━╸╻  ┏━┓┏━┓┏━┓   ╻ ╻┏━┓ ┏━┓
+┃╺┓┃  ┣━┫┣┳┛┗━┓   ┃┏┛┏━┛ ┃┃┃
+┗━┛┗━╸╹ ╹╹┗╸┗━┛   ┗┛ ┗━╸╹┗━┛
 $COLOREND
 "
+
 	if [[ -f "$RULES_FILE" ]]; then
 		source $RULES_FILE
 	fi;
