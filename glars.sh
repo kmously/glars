@@ -92,7 +92,7 @@ RULES_FILE=/etc/glars/rules
 #
 # e.g. w.x.y.z/24
 #
-# To ban a single IP, use /32 subnet
+# To ban a single IP, use /32 subnet or don't specify a subnet
 #
 # One CIDR IP per line
 # Empty lines are allowed
@@ -105,12 +105,38 @@ IP_BLACKLIST_FILE=/etc/glars/blacklist
 
 
 
+# (Optional) Specify text file containing whitelisted IPs
+# The file must contain IP ranges in CIDR notation
+#
+# e.g. w.x.y.z/24
+#
+# To ban a single IP, use /32 subnet or don't specify a subnet
+#
+# One CIDR IP per line
+# Empty lines are allowed
+# Lines starting with # are ignored
+#
+# You can use as many IPs/subnets as you want, they won't affect iptables rules
+# and will be efficiently matched.
+#
+# The whitelist entries override the blacklist entries
+# (so an IP that is both whitelisted and blacklisted is effectively whitelisted)
+IP_WHITELIST_FILE=/etc/glars/whitelist
+
+
+
+# (Optional) Enable kernel logging
+# ('dmesg|grep GLARS' to see logs)
+LOG=1
+
+
+
 # (Optional) Set COLOR to one of
 #
 # green pink red blue grey yellow cyan white
 #
 # or unset it if you don't want colors in the output
-COLOR=white
+COLOR=yellow
 
 
 
@@ -119,10 +145,6 @@ COLOR=white
 BOLD=1
 
 
-
-# (Optional) Enable logging
-# ('dmesg|grep GLARS' to see logs)
-LOG=1
 
 
 
@@ -508,6 +530,7 @@ function duplicate_port {
 
 
 
+
 # Limit number of incoming connections to
 # our ports
 # This only affects connections to the router itself
@@ -520,7 +543,7 @@ function limit_connections_to_public_port {
 	printf "\tlimiting (public port)$COLOR %18s $COLOREND ------> $COLOR $3 $COLOREND\n" "($1)  :$2"
 	iptables -A INPUT -i $EXTERNAL_IF -m hashlimit -p $1 --dport $2 --hashlimit $3 --hashlimit-mode srcip --hashlimit-name ssh -m state --state new -j ACCEPT
 	if [ $LOG = 1 ] ; then
-		iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW  -j LOG --log-prefix "GLARS: DropPktToPublicPort: "
+		iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW  -j LOG --log-prefix "GLARS: DropPktToPubPort: "
 	fi
 	iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW -j DROP
 }
@@ -548,7 +571,7 @@ function limit_connections_to_internal_host {
 	printf "\tlimiting (dest host)$COLOR %20s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state new -m hashlimit --hashlimit $2 --hashlimit-name $1  -j ACCEPT
 	if [ $LOG = 1 ] ; then
-		iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -j LOG --log-prefix "GLARS: DropPktToInternalHost: "
+		iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -j LOG --log-prefix "GLARS: DropPktToHost: "
 	fi;
 	iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -j DROP
 }
@@ -563,33 +586,49 @@ function limit_connections_to_internal_port {
 	printf "\tlimiting (private port)$COLOR %17s $COLOREND ------> $COLOR $3 $COLOREND\n" "($1)  :$2"
 	iptables -A FORWARD -m hashlimit -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET --hashlimit $3 --hashlimit-mode dstip --hashlimit-name "connections_to_forwarded_port_$1_$2" -m state --state new -j ACCEPT
 	if [ $LOG = 1 ] ; then
-		iptables -A FORWARD -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET -m state --state new -j LOG --log-prefix "GLARS: DropPktToInternalPort: "
+		iptables -A FORWARD -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET -m state --state new -j LOG --log-prefix "GLARS: DropPktToFwdPort: "
 	fi;
 	iptables -A FORWARD -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET -m state --state new -j DROP
 }
 
-function setup_blacklist {
+function setup_blacklist_and_whitelist {
 	IP_COUNT=0
-	# Ignore blacklisted IPs
 	if [[ -f "$IP_BLACKLIST_FILE" ]]; then
-		echo -en "\nSetting blacklist from $COLOR $IP_BLACKLIST_FILE $COLOREND..."
-		ipset -N banned_ips nethash
+		echo -en "Setting blacklist from $COLOR $IP_BLACKLIST_FILE $COLOREND..."
 		# Normally we do -A (append), but make an exception for blacklisted IPs
 		# to drop them earlier
-		iptables -I INPUT -i $EXTERNAL_IF -m set --match-set banned_ips src -j DROP
-		iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set banned_ips src -j DROP
+		iptables -I INPUT -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -j DROP
+		iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -j DROP
 		if [ $LOG = 1 ] ; then
-			iptables -I INPUT -i $EXTERNAL_IF -m set --match-set banned_ips src -j LOG --log-prefix "GLARS: DropBlacklistedIPOnInput: "
-			iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set banned_ips src -j LOG --log-prefix "GLARS: DropBlacklistIPOnFwd: "
+			iptables -I INPUT -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -j LOG --log-prefix "GLARS: DropBlacklistInput: "
+			iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -j LOG --log-prefix "GLARS: DropBlacklistFwd: "
 		fi;
 		for i in `cat $IP_BLACKLIST_FILE|grep -v "\s*#"`; do 
 			# echo "Blacklisting $i"
 			IP_COUNT=$(($IP_COUNT+1))
-			ipset -A banned_ips $i
+			ipset -A blacklisted_ips $i
 		done;
 		echo "done - $IP_COUNT IP subnets blacklisted"
 	else
 		echo -e "No blacklist file -- skipping blacklist setup"
+	fi;
+
+
+	IP_COUNT=0
+	if [[ -f "$IP_WHITELIST_FILE" ]]; then
+		echo -en "Setting whitelist from $COLOR $IP_WHITELIST_FILE $COLOREND..."
+		# Normally we do -A (append), but make an exception for whitelisted IPs
+		# to accept them earlier (that way, they don't get affected by rate limiting, etc.)
+		iptables -I INPUT -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
+		iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
+		for i in `cat $IP_WHITELIST_FILE|grep -v "\s*#"`; do
+			# echo "Whitelisting $i"
+			IP_COUNT=$(($IP_COUNT+1))
+			ipset -A whitelisted_ips $i
+		done;
+		echo "done - $IP_COUNT IP subnets whitelisted "
+	else
+		echo -e "No whitelist file -- skipping whitelist setup"
 	fi;
 }
 
@@ -618,6 +657,8 @@ $COLOREND
 
 	clear_all_configurations;
 
+	ipset -N blacklisted_ips nethash
+	ipset -N whitelisted_ips nethash
 	setup_gateway;
 
 	if [[ -f "$RULES_FILE" ]]; then
@@ -626,7 +667,7 @@ $COLOREND
 		printf "No rules specified\n"
 	fi;
 
-	setup_blacklist;
+	setup_blacklist_and_whitelist;
 }
 
 main;
