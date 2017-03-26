@@ -431,7 +431,7 @@ function classify_download_by_host {
 #	$2 = class
 	printf "\t(dest ip)$COLOR  %30s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -o $INTERNAL_IF -d $1 -j CLASSIFY --set-class $2
-	}
+}
 
 
 # Classify download traffic from a particular host on the Internet
@@ -441,7 +441,7 @@ function classify_download_from_host {
 #	$2 = class
 	printf "\t(source ip)$COLOR  %28s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -o $INTERNAL_IF -s $1 -j CLASSIFY --set-class $2
-	}
+}
 
 
 
@@ -518,7 +518,7 @@ function forward {
 
 
 
-# Duplicate a port on EXTERNAL_IF
+# Duplicate a port (on both $EXTERNAL_IF and $INTERNAL_IF)
 function duplicate_port {
 #	$1 = tcp or udp
 #	$2 = (external) port
@@ -530,6 +530,12 @@ function duplicate_port {
 
 
 
+# Deny Internet access to a specific host or subnet
+function deny_internet {
+#	$1 = host (or subnet) which should be denied Internet access
+        printf "\tDenying Internet access to %15s ------> $COLOR %s $COLOREND\n" "" "$1"
+	iptables -I FORWARD -o $EXTERNAL_IF -s $1 -j DROP
+}
 
 # Limit number of incoming connections to
 # our ports
@@ -541,9 +547,9 @@ function limit_connections_to_public_port {
 #	$2 port to ratelimit
 #	$3 ratelimit
 	printf "\tlimiting (public port)$COLOR %18s $COLOREND ------> $COLOR $3 $COLOREND\n" "($1)  :$2"
-	iptables -A INPUT -i $EXTERNAL_IF -m hashlimit -p $1 --dport $2 --hashlimit $3 --hashlimit-mode srcip --hashlimit-name ssh -m state --state new -j ACCEPT
+	iptables -A INPUT -i $EXTERNAL_IF -m hashlimit -p $1 --dport $2 --hashlimit $3 --hashlimit-mode srcip,dstport --hashlimit-name "limitport-$2" -m state --state new -j ACCEPT
 	if [ $LOG = 1 ] ; then
-		iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW  -j LOG --log-prefix "GLARS: DropPktToPubPort: "
+		iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW  -j LOG --log-prefix "GLARS: DropPktToPubPort-$2: "
 	fi
 	iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW -j DROP
 }
@@ -592,6 +598,26 @@ function limit_connections_to_internal_port {
 }
 
 function setup_blacklist_and_whitelist {
+
+
+	IP_COUNT=0
+	if [[ -f "$IP_WHITELIST_FILE" ]]; then
+		echo -en "Setting whitelist from $COLOR $IP_WHITELIST_FILE $COLOREND..."
+		# Normally we do -A (append), but make an exception for whitelisted IPs
+		# to accept them earlier (that way, they don't get affected by rate limiting, etc.)
+		iptables -I INPUT -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
+		iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
+		for i in `cat $IP_WHITELIST_FILE|grep -v "\s*#"`; do
+			# echo "Whitelisting $i"
+			IP_COUNT=$(($IP_COUNT+1))
+			ipset -A whitelisted_ips $i
+		done;
+		echo "done - $IP_COUNT IP subnets whitelisted "
+	else
+		echo -e "No whitelist file -- skipping whitelist setup"
+	fi;
+
+
 	IP_COUNT=0
 	if [[ -f "$IP_BLACKLIST_FILE" ]]; then
 		echo -en "Setting blacklist from $COLOR $IP_BLACKLIST_FILE $COLOREND..."
@@ -611,24 +637,6 @@ function setup_blacklist_and_whitelist {
 		echo "done - $IP_COUNT IP subnets blacklisted"
 	else
 		echo -e "No blacklist file -- skipping blacklist setup"
-	fi;
-
-
-	IP_COUNT=0
-	if [[ -f "$IP_WHITELIST_FILE" ]]; then
-		echo -en "Setting whitelist from $COLOR $IP_WHITELIST_FILE $COLOREND..."
-		# Normally we do -A (append), but make an exception for whitelisted IPs
-		# to accept them earlier (that way, they don't get affected by rate limiting, etc.)
-		iptables -I INPUT -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
-		iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
-		for i in `cat $IP_WHITELIST_FILE|grep -v "\s*#"`; do
-			# echo "Whitelisting $i"
-			IP_COUNT=$(($IP_COUNT+1))
-			ipset -A whitelisted_ips $i
-		done;
-		echo "done - $IP_COUNT IP subnets whitelisted "
-	else
-		echo -e "No whitelist file -- skipping whitelist setup"
 	fi;
 }
 

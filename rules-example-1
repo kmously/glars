@@ -1,6 +1,7 @@
 # Declare host IPs here
 FTPSERVER_IP=192.168.31.27
 HTTPSERVER_IP=$(cat /etc/hosts|grep 'httpserver '|sed -e 's/\s.*//g')
+SMART_TV=192.168.31.40
 
 
 function setup_rules_and_policies {
@@ -17,6 +18,10 @@ function setup_rules_and_policies {
 	forward tcp    21  $FTPSERVER_IP:21
 
 
+	# Don't trust your new Samsung Smart TV?
+	# deny it Internet access!
+	# All local functionality should continue to work fine
+	deny_internet $SMART_TV
 
 
 
