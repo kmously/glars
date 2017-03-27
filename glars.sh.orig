@@ -525,7 +525,7 @@ function duplicate_port {
 #	$3 = port to which $2 should be duplicated
         printf "\tDuplicating (public) port$COLOR %15s $COLOREND ------> $COLOR %s $COLOREND\n" "($1)  :$2" "$3"
 	iptables -t nat -A PREROUTING -i $EXTERNAL_IF -p $1 --dport $3 -j REDIRECT --to-port $2
-	iptables -t nat -A PREROUTING -i $INTERNAL_IF -p $1 -d $LOCAL_SUBNET --dport $3 -j REDIRECT --to-port $2
+	iptables -t nat -A PREROUTING -i $INTERNAL_IF -p $1 -s $LOCAL_SUBNET --dport $3 -j REDIRECT --to-port $2
 }
 
 
