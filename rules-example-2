@@ -2,6 +2,7 @@
 FOO_IP=$(cat /etc/hosts|grep 'foo '|sed -e 's/\s.*//g')
 BAR_IP=$(cat /etc/hosts|grep 'bar '|sed -e 's/\s.*//g')
 DUMMY_IP=192.168.31.45
+VNCSERVER=192.168.31.50
 
 
 function setup_rules_and_policies {
@@ -138,6 +139,7 @@ function setup_rules_and_policies {
 		printf "\tIncoming connection limits: \n"
 		printf "\t--------------------------- \n"
 
+
 		# limit attacks on our SSH (22) port
 		limit_connections_to_public_port tcp 22 10/min
 
@@ -154,8 +156,12 @@ function setup_rules_and_policies {
 
 	# Duplicate SSH to port 8080 as that's one of the most commonly unblocked ports
 	# (I would duplicate to 80 and 443 as well, but I need to forward those)
-	duplicate_port tcp 22 8080
+	port_duplicate tcp 22 8080
 
+
+
+	# Use port locking (port knocking) to hide our VNC server!
+	port_lock_forward tcp 22 6000,8000,10000 $VNCSERVER:5900
 
 
 
@@ -164,7 +170,7 @@ function setup_rules_and_policies {
 	echo "----------------"
 
 	# FOO is hosting an HTTP server, so lets forward ports 80 and 443
-	forward tcp    80  $FOO_IP:80
-	forward tcp   443  $FOO_IP:443
+	port_forward tcp    80  $FOO_IP:80
+	port_forward tcp   443  $FOO_IP:443
 
 }

@@ -31,7 +31,7 @@ function setup_rules_and_policies {
 	# Our ISP blocks incoming port 22, which means we cannot SSH to 
 	# our router over the standard port.
 	# Let's duplicate port 22 to port 8080, which our ISP does NOT block
-	duplicate_port tcp 22 8080
+	port_duplicate tcp 22 8080
 
 
 }

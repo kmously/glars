@@ -350,10 +350,13 @@ fi;
 
 function clear_all_configurations {
 	echo -en "Resetting all configurations (iptables, tc and ipset)..."
-	iptables -F -t nat
 	iptables -F
+	iptables -F -t nat
 	tc qdisc del dev $INTERNAL_IF root
 	tc qdisc del dev $EXTERNAL_IF root
+	iptables -X KNOCKING
+	iptables -X -t nat
+	iptables -t nat -X KNOCKING_FORWARD
 	ipset -F
 	ipset -X
 	echo -e "done"
@@ -507,7 +510,7 @@ function classify_traffic_to_lan {
 # The second rule is needed so that internal 
 # hosts can connect to internal servers using the public IP/domain
 # e.g. smtp.domain.com:25
-function forward {
+function port_forward {
 #	$1 = tcp or udp
 #	$2 = EXTERNAL PORT
 #	$3 = INTERNAL DESTINATION (IP:PORT)
@@ -519,7 +522,7 @@ function forward {
 
 
 # Duplicate a port (on both $EXTERNAL_IF and $INTERNAL_IF)
-function duplicate_port {
+function port_duplicate {
 #	$1 = tcp or udp
 #	$2 = (external) port
 #	$3 = port to which $2 should be duplicated
@@ -641,10 +644,169 @@ function setup_blacklist_and_whitelist {
 }
 
 
+# Opens up access to a port
+# on the GLARS router
+function port_open {
+#	$1 = tcp or udp
+#	$2 = EXTERNAL PORT
+        printf "\tOpening (public) port   $COLOR %19s $COLOREND\n" "($1)  :$2"
+	iptables -A INPUT -p $1 -i $EXTERNAL_IF --dport $2 -j ACCEPT
+}
+
+# Locks port with a lock sequence and forwards it 
+# to an internal host
+# A connecting host must knock on the ports in the specified order
+# to temporarily open up access to a port
+#
+# example:
+#
+# port_lock_forward 9000 192.168.31.5:22 5000,6000,7000 60
+#
+# will forward port 9000 to 192.168.31.5:22 and 
+# lock it so that it opens up only for hosts 
+# that knock on 5000 then 6000 then 7000 within 60 seconds
+# 
+# Port will remain open for seconds/<number of ports>
+#
+# So in the above example, port 9000 will remain open for 20 seconds 
+# after knocking on port 7000
+#
+function port_lock_forward {
+#	$1 = tcp or udp
+#	$2 = EXTERNAL PORT
+#	$3 = array of port numbers
+#	$4 = seconds
+#	$5 = HOST:PORT to forward port to
+
+	iptables -t nat -N KNOCKING_FORWARD
+
+	iptables -t nat -A PREROUTING -p $1 -i $EXTERNAL_IF --dport $2 -j KNOCKING_FORWARD
+	iptables -t nat -A PREROUTING -i $INTERNAL_IF -s $LOCAL_SUBNET -d $PUBLIC_IP -p $1 --dport $2 -j KNOCKING_FORWARD
+
+	printf "\tLocking (forward port)$COLOR %17s $COLOREND ------> $COLOR %s %s (%s seconds) $COLOREND\n" "($1)  :$2" "$5" "$3" "$4"
+        LOCK_SEQUENCE=$(echo $3 | sed -e 's/,/ /g')
+        COUNT=0
+        for i in $LOCK_SEQUENCE; do
+                COUNT=$((COUNT+1))
+
+                # If you change GATENAME, be sure to change the other rules that need
+		# to find the first gate
+                GATENAME=gate_$1_$2_$COUNT
+                iptables -t nat -N $GATENAME
+                # For anything after the first knock, we need to remove the last mark
+                if [[ $COUNT -gt 1 ]] ; then
+                        LASTCOUNT=$((COUNT-1))
+                        iptables -t nat -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
+                fi;
+                iptables -t nat -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS:$GATENAME "
+                iptables -t nat -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
+                # For anything after the first knock, we need to redirect traffic to first gate
+                if [[ $COUNT -gt 1 ]] ; then
+                        LASTCOUNT=$((COUNT-1))
+                        iptables -t nat -A $GATENAME -j gate_$1_$2_1
+                fi;
+        done
+        iptables -t nat -N passed_fwd_p_$1_$2
+        iptables -t nat -A passed_fwd_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS:accept_p_$2 "
+	iptables -t nat -A passed_fwd_p_$1_$2 -p $1 --dport $2 -j DNAT --to-destination $5
+        iptables -t nat -A passed_fwd_p_$1_$2 -j gate_$1_$2_1
 
 
+        SECONDS_PER_GATE=$(($4/$COUNT))
+        iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$COUNT -j passed_fwd_p_$1_$2
+        for ((i=$COUNT-1; i>0; i--)); do
+                NEXTGATE=$((i+1))
+                GATENAME=gate_$1_$2_$NEXTGATE
+                iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$i -j $GATENAME
+        done;
 
 
+        iptables -t nat -A KNOCKING_FORWARD -j gate_$1_$2_1
+}
+
+# Locks a port with a lock sequence
+# A host must knock on the ports in the same
+# sequence to open up access to a port
+# temporarily
+#
+# Syntax:
+#
+# port_lock 22 5000,6000,7000 60
+#
+# will lock port 22 so that it opens up only for hosts 
+# that knock on 5000 then 6000 then 7000 within 60 seconds
+# 
+# Port will remain open for seconds/<number of ports>
+# So in the above example, port 22 will remain open for 20 seconds 
+# after knocking on port 7000
+#
+function port_lock {
+#       $1 = tcp or udp
+#       $2 = EXTERNAL PORT
+#       $3 = array of port numbers
+#       $4 = seconds
+
+
+	printf "\tLocking (public port)$COLOR %17s $COLOREND ------> $COLOR %s (%s seconds) $COLOREND\n" "($1)  :$2" "$3" "$4"
+        LOCK_SEQUENCE=$(echo $3 | sed -e 's/,/ /g')
+        COUNT=0
+        for i in $LOCK_SEQUENCE; do
+                COUNT=$((COUNT+1))
+
+                # If you change GATENAME, be sure to change the other rules that need
+		# to find the first gate
+                GATENAME=gate_$1_$2_$COUNT
+                iptables -t nat -N $GATENAME
+                # For anything after the first knock, we need to remove the last mark
+                if [[ $COUNT -gt 1 ]] ; then
+                        LASTCOUNT=$((COUNT-1))
+                        iptables -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
+                fi;
+                iptables -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS:$GATENAME "
+                iptables -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
+                # For anything after the first knock, we need to redirect traffic to first gate
+                if [[ $COUNT -gt 1 ]] ; then
+                        LASTCOUNT=$((COUNT-1))
+                        iptables -A $GATENAME -j gate_$1_$2_1
+                fi;
+        done
+        iptables -t nat -N passed_p_$1_$2
+        iptables -A passed_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS:accept_p_$2 "
+        iptables -A passed_p_$1_$2 -p $1 --dport $2 -j ACCEPT
+        iptables -A passed_p_$1_$2 -j gate_$1_$2_1
+
+
+        SECONDS_PER_GATE=$(($4/$COUNT))
+        iptables -A KNOCKING -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$COUNT -j passed_p_$1_$2
+        for ((i=$COUNT-1; i>0; i--)); do
+                NEXTGATE=$((i+1))
+                GATENAME=gate_$1_$2_$NEXTGATE
+                iptables -A KNOCKING -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$i -j $GATENAME
+        done;
+
+
+        iptables -A KNOCKING -j gate_$1_$2_1
+}
+
+
+function finalize_rules_and_policies {
+	echo -n "Finalizing rules and policies..."
+	iptables -A INPUT -i $EXTERNAL_IF -p icmp -j ACCEPT
+	iptables -A INPUT -j KNOCKING
+	iptables -A PREROUTING -t nat -j KNOCKING_FORWARD
+	iptables -A INPUT -i $EXTERNAL_IF -j DROP
+	echo "done"
+}
+
+
+function pre_initialize_rules_and_policies {
+	echo -n "Initializing rules and policies..."
+	iptables -N KNOCKING
+        ipset -N blacklisted_ips nethash
+        ipset -N whitelisted_ips nethash
+	iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+	echo "done"
+}
 
 
 function main {
@@ -665,9 +827,9 @@ $COLOREND
 
 	clear_all_configurations;
 
-	ipset -N blacklisted_ips nethash
-	ipset -N whitelisted_ips nethash
 	setup_gateway;
+
+	pre_initialize_rules_and_policies;
 
 	if [[ -f "$RULES_FILE" ]]; then
 		setup_rules_and_policies;
@@ -675,6 +837,7 @@ $COLOREND
 		printf "No rules specified\n"
 	fi;
 
+	finalize_rules_and_policies;
 	setup_blacklist_and_whitelist;
 }
 
