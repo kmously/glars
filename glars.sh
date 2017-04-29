@@ -756,7 +756,7 @@ function port_lock {
                 # If you change GATENAME, be sure to change the other rules that need
 		# to find the first gate
                 GATENAME=gate_$1_$2_$COUNT
-                iptables -t nat -N $GATENAME
+                iptables -N $GATENAME
                 # For anything after the first knock, we need to remove the last mark
                 if [[ $COUNT -gt 1 ]] ; then
                         LASTCOUNT=$((COUNT-1))
@@ -770,7 +770,7 @@ function port_lock {
                         iptables -A $GATENAME -j gate_$1_$2_1
                 fi;
         done
-        iptables -t nat -N passed_p_$1_$2
+        iptables -N passed_p_$1_$2
         iptables -A passed_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS:accept_p_$2 "
         iptables -A passed_p_$1_$2 -p $1 --dport $2 -j ACCEPT
         iptables -A passed_p_$1_$2 -j gate_$1_$2_1
@@ -802,6 +802,7 @@ function finalize_rules_and_policies {
 function pre_initialize_rules_and_policies {
 	echo -n "Initializing rules and policies..."
 	iptables -N KNOCKING
+	iptables -t nat -N KNOCKING_FORWARD
         ipset -N blacklisted_ips nethash
         ipset -N whitelisted_ips nethash
 	iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
