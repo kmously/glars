@@ -183,6 +183,40 @@ BOLD=1
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ########################################################
 #
 # You don't need to look beyond here,
@@ -352,15 +386,21 @@ function clear_all_configurations {
 	echo -en "Resetting all configurations (iptables, tc and ipset)..."
 	iptables -F
 	iptables -F -t nat
-	tc qdisc del dev $INTERNAL_IF root
-	tc qdisc del dev $EXTERNAL_IF root
-	iptables -X KNOCKING
-	iptables -X -t nat
-	iptables -t nat -X KNOCKING_FORWARD
+	iptables -X 
+	iptables -t nat -X
 	ipset -F
 	ipset -X
+	tc qdisc del dev $INTERNAL_IF root
+	tc qdisc del dev $EXTERNAL_IF root
 	echo -e "done"
 }
+
+
+
+
+
+
+
 
 
 #
@@ -407,6 +447,16 @@ function initialize_bw_classes {
 
 
 
+
+
+
+
+
+
+
+
+
+
 #
 # Enables forwarding and NAT
 #
@@ -427,6 +477,10 @@ function setup_gateway {
 
 
 
+
+
+
+
 # Classify download traffic to a particular host on the network
 # to control bandwidth usage
 function classify_download_by_host {
@@ -437,6 +491,12 @@ function classify_download_by_host {
 }
 
 
+
+
+
+
+
+
 # Classify download traffic from a particular host on the Internet
 # to control bandwidth usage
 function classify_download_from_host {
@@ -445,6 +505,9 @@ function classify_download_from_host {
 	printf "\t(source ip)$COLOR  %28s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -o $INTERNAL_IF -s $1 -j CLASSIFY --set-class $2
 }
+
+
+
 
 
 
@@ -459,6 +522,13 @@ function classify_download_from_port {
 	}
 
 
+
+
+
+
+
+
+
 # Classify upload traffic from a particular host on the network
 # to control bandwidth usage
 function classify_upload_from_host {
@@ -467,6 +537,11 @@ function classify_upload_from_host {
 	printf "\t(source ip)$COLOR  %28s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -o $EXTERNAL_IF -s $1 -j CLASSIFY --set-class $2
 	}
+
+
+
+
+
 
 
 # Classify upload traffic from a specific (local) port
@@ -481,6 +556,9 @@ function classify_upload_from_port {
 	}
 
 
+
+
+
 # Classifies router-generated (not forwarded) traffic-to-WAN
 # It is recommended to keep a minimum bandwidth for this so router is 
 # always reachable from WAN-side
@@ -490,6 +568,12 @@ function classify_traffic_to_wan {
 	iptables -A OUTPUT -o $EXTERNAL_IF  -j CLASSIFY --set-class $1
 }
 
+
+
+
+
+
+
 # Classifies router-generated (not forwarded) traffic-to-LAN
 # It is recommended to keep a minimum bandwidth for this so router is 
 # always reachable from LAN-side
@@ -498,6 +582,10 @@ function classify_traffic_to_lan {
 	printf "%50s ------> $COLOR $1 $COLOREND\n" "(Router-to-LAN traffic)"
 	iptables -A OUTPUT -o $INTERNAL_IF  -j CLASSIFY --set-class $1
 }
+
+
+
+
 
 
  
@@ -557,6 +645,13 @@ function limit_connections_to_public_port {
 	iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW -j DROP
 }
 
+
+
+
+
+
+
+
 # Limit incoming connections to a host on the network
 #
 # Note: You cannot limit connections to a HOST on the network by doing:
@@ -584,6 +679,10 @@ function limit_connections_to_internal_host {
 	fi;
 	iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -j DROP
 }
+
+
+
+
 
 #
 # Limit incoming connections to a forwarded port on the network
@@ -644,6 +743,13 @@ function setup_blacklist_and_whitelist {
 }
 
 
+
+
+
+
+
+
+
 # Opens up access to a port
 # on the GLARS router
 function port_open {
@@ -653,24 +759,38 @@ function port_open {
 	iptables -A INPUT -p $1 -i $EXTERNAL_IF --dport $2 -j ACCEPT
 }
 
-# Locks port with a lock sequence and forwards it 
-# to an internal host
-# A connecting host must knock on the ports in the specified order
-# to temporarily open up access to a port
+
+
+
+
+
+
+
+
+
+
+#
+# Forwards a port to an internal host and locks it with the specified
+# lock sequence.
+#
+# A connecting host must knock on the ports in the specified order, within
+# the specified amount of time, to temporarily open up access to the locked
+# port
 #
 # example:
 #
-# port_lock_forward 9000 192.168.31.5:22 5000,6000,7000 60
+# port_lock_forward 9000 5000,6000,7000 60 192.168.31.5:22
 #
 # will forward port 9000 to 192.168.31.5:22 and 
 # lock it so that it opens up only for hosts 
 # that knock on 5000 then 6000 then 7000 within 60 seconds
 # 
-# Port will remain open for seconds/<number of ports>
+# The locked port will then remain open for this IP address for 
+# <seconds>/<number of ports>. In this example, port 9000 will 
+# remain open for 20 seconds after the knock on port 7000
 #
-# So in the above example, port 9000 will remain open for 20 seconds 
-# after knocking on port 7000
-#
+# A minimum of one port is needed for the lock sequence, but the sequence can be 
+# arbitrarily long.
 function port_lock_forward {
 #	$1 = tcp or udp
 #	$2 = EXTERNAL PORT
@@ -678,12 +798,13 @@ function port_lock_forward {
 #	$4 = seconds
 #	$5 = HOST:PORT to forward port to
 
-	iptables -t nat -N KNOCKING_FORWARD
+	# Without an exemption, local traffic to the locked/forwarded port will be dropped in the general
+	# "drop traffic coming from outside" rule unless the local host "knocks" first.
+	# The following rule exempts LAN-side traffic from having to go through the knock-tests to get to the locked port.
+	# I guess in accordance with the general "trust the LAN-side" approach taken elsewhere
+	iptables -t nat -A KNOCKING_FORWARD -i $INTERNAL_IF -p $1 --dport $2 -j DNAT --to-destination $5
 
-	iptables -t nat -A PREROUTING -p $1 -i $EXTERNAL_IF --dport $2 -j KNOCKING_FORWARD
-	iptables -t nat -A PREROUTING -i $INTERNAL_IF -s $LOCAL_SUBNET -d $PUBLIC_IP -p $1 --dport $2 -j KNOCKING_FORWARD
-
-	printf "\tLocking (forward port)$COLOR %17s $COLOREND ------> $COLOR %s %s (%s seconds) $COLOREND\n" "($1)  :$2" "$5" "$3" "$4"
+	printf "\tLocking & forwarding port $COLOR %13s $COLOREND ------> $COLOR %s %s (%s seconds) $COLOREND\n" "($1)  :$2" "$5" "$3" "$4"
 	LOCK_SEQUENCE=$(echo $3 | sed -e 's/,/ /g')
 	COUNT=0
 	for i in $LOCK_SEQUENCE; do
@@ -698,16 +819,19 @@ function port_lock_forward {
 			LASTCOUNT=$((COUNT-1))
 			iptables -t nat -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
 		fi;
-		iptables -t nat -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS:$GATENAME "
+		if [ $LOG = 1 ] ; then
+			iptables -t nat -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS: $GATENAME "
+		fi;
 		iptables -t nat -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
 		# For anything after the first knock, we need to redirect traffic to first gate
 		if [[ $COUNT -gt 1 ]] ; then
-			LASTCOUNT=$((COUNT-1))
 			iptables -t nat -A $GATENAME -j gate_$1_$2_1
 		fi;
-        done
+	done
 	iptables -t nat -N passed_fwd_p_$1_$2
-	iptables -t nat -A passed_fwd_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS:accept_p_$2 "
+	if [ $LOG = 1 ] ; then
+		iptables -t nat -A passed_fwd_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS: accept_p_$2 "
+	fi;
 	iptables -t nat -A passed_fwd_p_$1_$2 -p $1 --dport $2 -j DNAT --to-destination $5
 	iptables -t nat -A passed_fwd_p_$1_$2 -j gate_$1_$2_1
 
@@ -724,21 +848,26 @@ function port_lock_forward {
 	iptables -t nat -A KNOCKING_FORWARD -j gate_$1_$2_1
 }
 
-# Locks a port with a lock sequence
-# A host must knock on the ports in the same
-# sequence to open up access to a port
-# temporarily
 #
-# Syntax:
+# Locks a port with the specified lock sequence.
 #
-# port_lock 22 5000,6000,7000 60
+# A connecting host must knock on the ports in the specified order, within
+# the specified amount of time, to temporarily open up access to the locked
+# port
 #
-# will lock port 22 so that it opens up only for hosts 
-# that knock on 5000 then 6000 then 7000 within 60 seconds
-# 
-# Port will remain open for seconds/<number of ports>
-# So in the above example, port 22 will remain open for 20 seconds 
-# after knocking on port 7000
+# example:
+#
+# port_lock tcp 22 5000,6000,7000 90
+#
+# ..will lock port 22 (SSH) so that it the port is only accessible to hosts
+# who knock on ports 5000, 6000, 7000, in order, within 90 seconds.
+#
+# At that point, the locked port will remain open for the remote IP address for 
+# <seconds>/<number of ports>. In this example, port 22 will 
+# remain open for 30 seconds after the knock on port 7000
+#
+# A minimum of one port is needed for the lock sequence, but the sequence can be 
+# arbitrarily long.
 #
 function port_lock {
 #       $1 = tcp or udp
@@ -762,7 +891,9 @@ function port_lock {
 		LASTCOUNT=$((COUNT-1))
 		iptables -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
 	fi;
-	iptables -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS:$GATENAME "
+	if [ $LOG = 1 ] ; then
+		iptables -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS: $GATENAME "
+	fi;
 	iptables -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
 	# For anything after the first knock, we need to redirect traffic to first gate
 	if [[ $COUNT -gt 1 ]] ; then
@@ -771,7 +902,9 @@ function port_lock {
 	fi;
 	done
 	iptables -N passed_p_$1_$2
-	iptables -A passed_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS:accept_p_$2 "
+	if [ $LOG = 1 ] ; then
+		iptables -A passed_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS: accept_p_$2 "
+	fi;
 	iptables -A passed_p_$1_$2 -p $1 --dport $2 -j ACCEPT
 	iptables -A passed_p_$1_$2 -j gate_$1_$2_1
 
