@@ -684,44 +684,44 @@ function port_lock_forward {
 	iptables -t nat -A PREROUTING -i $INTERNAL_IF -s $LOCAL_SUBNET -d $PUBLIC_IP -p $1 --dport $2 -j KNOCKING_FORWARD
 
 	printf "\tLocking (forward port)$COLOR %17s $COLOREND ------> $COLOR %s %s (%s seconds) $COLOREND\n" "($1)  :$2" "$5" "$3" "$4"
-        LOCK_SEQUENCE=$(echo $3 | sed -e 's/,/ /g')
-        COUNT=0
-        for i in $LOCK_SEQUENCE; do
-                COUNT=$((COUNT+1))
+	LOCK_SEQUENCE=$(echo $3 | sed -e 's/,/ /g')
+	COUNT=0
+	for i in $LOCK_SEQUENCE; do
+		COUNT=$((COUNT+1))
 
-                # If you change GATENAME, be sure to change the other rules that need
+		# If you change GATENAME, be sure to change the other rules that need
 		# to find the first gate
-                GATENAME=gate_$1_$2_$COUNT
-                iptables -t nat -N $GATENAME
-                # For anything after the first knock, we need to remove the last mark
-                if [[ $COUNT -gt 1 ]] ; then
-                        LASTCOUNT=$((COUNT-1))
-                        iptables -t nat -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
-                fi;
-                iptables -t nat -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS:$GATENAME "
-                iptables -t nat -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
-                # For anything after the first knock, we need to redirect traffic to first gate
-                if [[ $COUNT -gt 1 ]] ; then
-                        LASTCOUNT=$((COUNT-1))
-                        iptables -t nat -A $GATENAME -j gate_$1_$2_1
-                fi;
+		GATENAME=gate_$1_$2_$COUNT
+		iptables -t nat -N $GATENAME
+		# For anything after the first knock, we need to remove the last mark
+		if [[ $COUNT -gt 1 ]] ; then
+			LASTCOUNT=$((COUNT-1))
+			iptables -t nat -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
+		fi;
+		iptables -t nat -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS:$GATENAME "
+		iptables -t nat -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
+		# For anything after the first knock, we need to redirect traffic to first gate
+		if [[ $COUNT -gt 1 ]] ; then
+			LASTCOUNT=$((COUNT-1))
+			iptables -t nat -A $GATENAME -j gate_$1_$2_1
+		fi;
         done
-        iptables -t nat -N passed_fwd_p_$1_$2
-        iptables -t nat -A passed_fwd_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS:accept_p_$2 "
+	iptables -t nat -N passed_fwd_p_$1_$2
+	iptables -t nat -A passed_fwd_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS:accept_p_$2 "
 	iptables -t nat -A passed_fwd_p_$1_$2 -p $1 --dport $2 -j DNAT --to-destination $5
-        iptables -t nat -A passed_fwd_p_$1_$2 -j gate_$1_$2_1
+	iptables -t nat -A passed_fwd_p_$1_$2 -j gate_$1_$2_1
 
 
-        SECONDS_PER_GATE=$(($4/$COUNT))
-        iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$COUNT -j passed_fwd_p_$1_$2
-        for ((i=$COUNT-1; i>0; i--)); do
-                NEXTGATE=$((i+1))
-                GATENAME=gate_$1_$2_$NEXTGATE
-                iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$i -j $GATENAME
-        done;
+	SECONDS_PER_GATE=$(($4/$COUNT))
+	iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$COUNT -j passed_fwd_p_$1_$2
+	for ((i=$COUNT-1; i>0; i--)); do
+		NEXTGATE=$((i+1))
+		GATENAME=gate_$1_$2_$NEXTGATE
+		iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$i -j $GATENAME
+	done;
 
 
-        iptables -t nat -A KNOCKING_FORWARD -j gate_$1_$2_1
+	iptables -t nat -A KNOCKING_FORWARD -j gate_$1_$2_1
 }
 
 # Locks a port with a lock sequence
@@ -748,44 +748,44 @@ function port_lock {
 
 
 	printf "\tLocking (public port)$COLOR %17s $COLOREND ------> $COLOR %s (%s seconds) $COLOREND\n" "($1)  :$2" "$3" "$4"
-        LOCK_SEQUENCE=$(echo $3 | sed -e 's/,/ /g')
-        COUNT=0
-        for i in $LOCK_SEQUENCE; do
-                COUNT=$((COUNT+1))
+	LOCK_SEQUENCE=$(echo $3 | sed -e 's/,/ /g')
+	COUNT=0
+	for i in $LOCK_SEQUENCE; do
+		COUNT=$((COUNT+1))
 
-                # If you change GATENAME, be sure to change the other rules that need
-		# to find the first gate
-                GATENAME=gate_$1_$2_$COUNT
-                iptables -N $GATENAME
-                # For anything after the first knock, we need to remove the last mark
-                if [[ $COUNT -gt 1 ]] ; then
-                        LASTCOUNT=$((COUNT-1))
-                        iptables -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
-                fi;
-                iptables -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS:$GATENAME "
-                iptables -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
-                # For anything after the first knock, we need to redirect traffic to first gate
-                if [[ $COUNT -gt 1 ]] ; then
-                        LASTCOUNT=$((COUNT-1))
-                        iptables -A $GATENAME -j gate_$1_$2_1
-                fi;
-        done
-        iptables -N passed_p_$1_$2
-        iptables -A passed_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS:accept_p_$2 "
-        iptables -A passed_p_$1_$2 -p $1 --dport $2 -j ACCEPT
-        iptables -A passed_p_$1_$2 -j gate_$1_$2_1
-
-
-        SECONDS_PER_GATE=$(($4/$COUNT))
-        iptables -A KNOCKING -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$COUNT -j passed_p_$1_$2
-        for ((i=$COUNT-1; i>0; i--)); do
-                NEXTGATE=$((i+1))
-                GATENAME=gate_$1_$2_$NEXTGATE
-                iptables -A KNOCKING -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$i -j $GATENAME
-        done;
+	# If you change GATENAME, be sure to change the other rules that need
+	# to find the first gate
+	GATENAME=gate_$1_$2_$COUNT
+	iptables -N $GATENAME
+	# For anything after the first knock, we need to remove the last mark
+	if [[ $COUNT -gt 1 ]] ; then
+		LASTCOUNT=$((COUNT-1))
+		iptables -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
+	fi;
+	iptables -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS:$GATENAME "
+	iptables -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
+	# For anything after the first knock, we need to redirect traffic to first gate
+	if [[ $COUNT -gt 1 ]] ; then
+		LASTCOUNT=$((COUNT-1))
+		iptables -A $GATENAME -j gate_$1_$2_1
+	fi;
+	done
+	iptables -N passed_p_$1_$2
+	iptables -A passed_p_$1_$2 -p $1 --dport $2 -j LOG --log-prefix "GLARS:accept_p_$2 "
+	iptables -A passed_p_$1_$2 -p $1 --dport $2 -j ACCEPT
+	iptables -A passed_p_$1_$2 -j gate_$1_$2_1
 
 
-        iptables -A KNOCKING -j gate_$1_$2_1
+	SECONDS_PER_GATE=$(($4/$COUNT))
+	iptables -A KNOCKING -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$COUNT -j passed_p_$1_$2
+	for ((i=$COUNT-1; i>0; i--)); do
+		NEXTGATE=$((i+1))
+		GATENAME=gate_$1_$2_$NEXTGATE
+		iptables -A KNOCKING -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$i -j $GATENAME
+	done;
+
+
+	iptables -A KNOCKING -j gate_$1_$2_1
 }
 
 
