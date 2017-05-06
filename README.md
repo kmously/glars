@@ -16,16 +16,16 @@ To use GLARS in the default settings, you only need to edit 3 options at the top
  - The IP and subnet of the LAN-side (most home routers default to something like 192.168.0.0/24)
 
 
-Those are the only required options. If run GLARS without any further options, it will default to behaviour similar to a newly-installed "regular" home router. In general, GLARS trusts the LAN-side and distrusts the WAN-side, so make sure that you do not lock yourself out of your GLARS box if you are accessing it from the WAN-side.  
+Those are the only required options. If GLARS is run without any further options, it will default to behaviour similar to the behaviour of most newly-installed "regular" home routers. In general, GLARS trusts the LAN-side and distrusts the WAN-side, so make sure that you do not lock yourself out of your GLARS box if you are accessing it from the WAN-side.
 
-GLARS has many optional options that can control its behaviour, and is expected to gain further functionality in the future. For advanced functionality, you may want to add a "rules" file to control the behaviour of GLARS. See TECHNICAL DETAILS for more info.
+GLARS has many optional settings that can control its behaviour, and is expected to gain further functionality in the future. For optional settings, see **OPTIONAL SETTINGS** and for for advanced functionality, you may want to add a "rules" file to control the behaviour of GLARS. See **TECHNICAL DETAILS** for more info.
 
 
 
 ## FAQ
 
 ### Who is GLARS intended for?
-Anyone who has a Linux box (either large x86 systems or small ARM devices like Raspberry Pi or Odroid) that they would like to use as a router, but would rather not have to deal directly with low-level tools (iptables, tc, etc.) that are required to so.
+Anyone who has a Linux box (either large x86 systems or small ARM devices like Raspberry Pi or Odroid) that they would like to use as a router, but would rather not have to deal directly with low-level tools (iptables, tc, etc.) that are required to so. Anyone fed up with the limited (and insecure) routers available today will likely enjoy the flexibility and power of running a Linux-based router. GLARS makes that easier.
 
 
 
@@ -35,7 +35,7 @@ Most home routers do several things in addition to "routing". Many home routers 
  1) Provide one or more Wi-Fi access points
  2) Provide DHCP functionality (responds to new hosts on the network and tells them the information they need to use the local network or get to the Internet)
  3) Provide DNS functionality (responds to queries for IP addresses of hosts like "www.yahoo.com")
- 4) **Provide layer 3 routing** (that is, allows the flow of traffic from the "local" network to the "wide" network, usually the Internet, and vice versa). This is really the definition of "routing".
+ 4) **Provide layer 3 routing** (allows, and controls, the flow of traffic from one network to the other. Usually one network is a "local" network, and the other an "external" network (usually the Internet). This is the definition of "routing".
 
 
 GLARS is only concerned with (4), "routing". As such, by itself, it will likely be insufficient as a replacement for most people's use-cases. However, in combination with other GNU/Linux software and/or hardware extensions that provide DHCP/DNS/Wi-Fi functionality, the end some can act as very powerful and customizable alternative to any home (or even enterprise-level) routers.  It is also very easy to use a GNU/Linux box running GLARS _in combination_ with with common home routers, such that the Wi-Fi/DNS/DHCP is provided by the existing home router, but the actual routing is done by GLARS, thus getting the best of both worlds.
@@ -108,14 +108,13 @@ Forwards an external port to the specified internal_host:port. For example, if y
 
 
 
-### port_lock <protocol> <number> <lock sequence> <timeout>
-Opens port <number> only for hosts that "knock" on the specified <lock sequence> of ports, within the specified <timeout> seconds value.
+### port_lock
+Opens port <number> only for hosts that "knock" on the specified <lock sequence> of ports, within the specified <timeout> seconds value. The port will then remain open for <timeout> / < number of ports in lock sequence>. Example:
 
-example:
 **`port_lock tcp 22 4000,5000,6000 90`**
 
 
-This will make port 22 accessible from the WAN side only to IP addresses that "knock" on ports 4000 then 5000 then 6000 within 90 seconds. After knocking on port 6000, the port will remain open for that IP address for 90/3 = 30 seconds.
+This will make port 22 accessible from the WAN side only to IP addresses that "knock" on ports 4000 then 5000 then 6000 within 90 seconds. After knocking on port 6000, the port will remain open for that IP address for 90/3 = 30 seconds before closing again.
 
 
 
@@ -127,12 +126,12 @@ This will make port 22 accessible from the WAN side only to IP addresses that "k
 
 ### port_lock_forward 
 port_lock_forward <protocol> <number> <lock sequence> <timeout> <internal_host:port_number>
-Forwards an external port to the specified internal_host:port, only for hosts that "knock" on the specified <lock sequence> of ports, within the specified <timeout> seconds value. For example, if you have an FTP server on the LAN side with IP address 192.168.0.12, listening to port 21, you can make it accessible from the WAN-side on port 1000, only to those who have successfully knocked on the secret knock sequence, using:
+Forwards an external port to the specified internal_host:port, only for hosts that "knock" on the specified <lock sequence> of ports, within the specified <timeout> seconds value. The port will then remain open for <timeout> / < number of ports in lock sequence>. For example, if you have an FTP server on the LAN side with IP address 192.168.0.12, listening to port 21, you can make it accessible from the WAN-side on port 1000, only to those who have successfully knocked on the secret knock sequence, using:
 
 **`port_lock_forward tcp 1000 3000,5000,7000,9000 100 192.168.0.12:21`**
 
 
-External hosts that knock on ports 3000,5000,7000,9000 within 120 seconds will be able to access the FTP server via external port 1000 for 100/4 = 25 seconds
+External hosts that knock on ports 3000,5000,7000,9000 within 100 seconds will be able to access the FTP server via external port 1000 for 100/4 = 25 seconds
 
 
 
@@ -161,5 +160,4 @@ Duplicates a local port. For example, if your GLARS router is running an SSH ser
 
 
 ### TODO:
-Document all the classify_* functions
-Document all the limit_* functions
+Document bandwidth classes, classify_* and limit_* functions.
