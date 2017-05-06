@@ -376,6 +376,8 @@ fi;
 
 
 
+UPLOAD_CLASSES_HAVE_BEEN_INITIALIZED=0
+DOWNLOAD_CLASSES_HAVE_BEEN_INITIALIZED=0
 
 
 
@@ -419,6 +421,7 @@ function initialize_bw_classes {
 		CLASSES_SIZE=${#UPLOAD_CLASSES[*]};
 		IFACE=$EXTERNAL_IF
 		CEIL=$UPLOAD_CEIL
+		UPLOAD_CLASSES_HAVE_BEEN_INITIALIZED=1
 	elif [ "$1" = "download" ]; then
 		# The following syntax means CLASSES is an array () 
 		# made up of the expanded expression ${} that is the 
@@ -427,6 +430,7 @@ function initialize_bw_classes {
 		CLASSES_SIZE=${#DOWNLOAD_CLASSES[*]};
 		IFACE=$INTERNAL_IF
 		CEIL=$DOWNLOAD_CEIL
+		DOWNLOAD_CLASSES_HAVE_BEEN_INITIALIZED=1
 	fi
 
 
@@ -481,17 +485,18 @@ function setup_gateway {
 
 
 
-# Classify download traffic to a particular host on the network
+# Classify download traffic by a particular host on the LAN
 # to control bandwidth usage
 function classify_download_by_host {
 #	$1 = host or subnet
 #	$2 = class
+
+	if [ $DOWNLOAD_CLASSES_HAVE_BEEN_INITIALIZED == 0 ] ; then
+		initialize_bw_classes download
+	fi;
 	printf "\t(dest ip)$COLOR  %30s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -o $INTERNAL_IF -d $1 -j CLASSIFY --set-class $2
 }
-
-
-
 
 
 
@@ -502,6 +507,9 @@ function classify_download_by_host {
 function classify_download_from_host {
 #	$1 = host or subnet
 #	$2 = class
+	if [ $DOWNLOAD_CLASSES_HAVE_BEEN_INITIALIZED == 0 ] ; then
+		initialize_bw_classes download
+	fi;
 	printf "\t(source ip)$COLOR  %28s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -o $INTERNAL_IF -s $1 -j CLASSIFY --set-class $2
 }
@@ -517,26 +525,44 @@ function classify_download_from_port {
 #	$1 = tcp or udp
 #	$2 = port
 #	$3 = class
+	if [ $DOWNLOAD_CLASSES_HAVE_BEEN_INITIALIZED == 0 ] ; then
+		initialize_bw_classes download
+	fi;
 	printf "\t(source port)$COLOR  %26s $COLOREND ------> $COLOR $3 $COLOREND\n" "($1) :$2"
 	iptables -A FORWARD -o $INTERNAL_IF -p $1 --sport $2 -j CLASSIFY --set-class $3
-	}
+}
 
 
 
 
 
+# (UNTESTED)
+# Classify upload traffic to a particular host or subnet on the Internet
+# to control bandwidth usage
+function classify_upload_to_host {
+#	$1 = host or subnet
+#	$2 = class
+	if [ $UPLOAD_CLASSES_HAVE_BEEN_INITIALIZED == 0 ] ; then
+		initialize_bw_classes upload
+	fi;
+	printf "\t(dest ip)$COLOR  %28s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
+	iptables -A FORWARD -o $EXTERNAL_IF -d $1 -j CLASSIFY --set-class $2
+}
 
 
 
 
-# Classify upload traffic from a particular host on the network
+# Classify upload traffic from a particular host or subnet on the LAN
 # to control bandwidth usage
 function classify_upload_from_host {
 #	$1 = host or subnet
 #	$2 = class
+	if [ $UPLOAD_CLASSES_HAVE_BEEN_INITIALIZED == 0 ] ; then
+		initialize_bw_classes upload
+	fi;
 	printf "\t(source ip)$COLOR  %28s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -o $EXTERNAL_IF -s $1 -j CLASSIFY --set-class $2
-	}
+}
 
 
 
@@ -550,10 +576,14 @@ function classify_upload_from_port {
 #	$1 = tcp or udp
 #	$2 = source port
 #	$3 = class
+	if [ $UPLOAD_CLASSES_HAVE_BEEN_INITIALIZED == 0 ] ; then
+		initialize_bw_classes upload
+	fi;
 	printf "\t(source port)$COLOR  %26s $COLOREND ------> $COLOR $3 $COLOREND\n" "($1) :$2"
 	iptables -A FORWARD -o $EXTERNAL_IF -p $1 --sport $2 -j CLASSIFY --set-class $3
+	# TODO: This RETURN rule looks like a mistake - need to test this whole area better
 	iptables -A FORWARD -o $EXTERNAL_IF -p $1 --sport $2 -j RETURN
-	}
+}
 
 
 
@@ -882,24 +912,24 @@ function port_lock {
 	for i in $LOCK_SEQUENCE; do
 		COUNT=$((COUNT+1))
 
-	# If you change GATENAME, be sure to change the other rules that need
-	# to find the first gate
-	GATENAME=gate_$1_$2_$COUNT
-	iptables -N $GATENAME
-	# For anything after the first knock, we need to remove the last mark
-	if [[ $COUNT -gt 1 ]] ; then
-		LASTCOUNT=$((COUNT-1))
-		iptables -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
-	fi;
-	if [ $LOG = 1 ] ; then
-		iptables -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS: $GATENAME "
-	fi;
-	iptables -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
-	# For anything after the first knock, we need to redirect traffic to first gate
-	if [[ $COUNT -gt 1 ]] ; then
-		LASTCOUNT=$((COUNT-1))
-		iptables -A $GATENAME -j gate_$1_$2_1
-	fi;
+		# If you change GATENAME, be sure to change the other rules that need
+		# to find the first gate
+		GATENAME=gate_$1_$2_$COUNT
+		iptables -N $GATENAME
+		# For anything after the first knock, we need to remove the last mark
+		if [[ $COUNT -gt 1 ]] ; then
+			LASTCOUNT=$((COUNT-1))
+			iptables -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_$LASTCOUNT
+		fi;
+		if [ $LOG = 1 ] ; then
+			iptables -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS: $GATENAME "
+		fi;
+		iptables -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_$COUNT --set -j ACCEPT
+		# For anything after the first knock, we need to redirect traffic to first gate
+		if [[ $COUNT -gt 1 ]] ; then
+			LASTCOUNT=$((COUNT-1))
+			iptables -A $GATENAME -j gate_$1_$2_1
+		fi;
 	done
 	iptables -N passed_p_$1_$2
 	if [ $LOG = 1 ] ; then
@@ -934,11 +964,18 @@ function finalize_rules_and_policies {
 
 function pre_initialize_rules_and_policies {
 	echo -n "Initializing rules and policies..."
+
+	# Create empty chains
 	iptables -N KNOCKING
 	iptables -t nat -N KNOCKING_FORWARD
+
+	# Create empty sets
         ipset -N blacklisted_ips nethash
         ipset -N whitelisted_ips nethash
+
+	# Add default early rules
 	iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
 	echo "done"
 }
 
