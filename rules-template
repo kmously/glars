@@ -1,0 +1,54 @@
+# Declare host IPs here
+FTPSERVER_IP=192.168.31.27
+HTTPSERVER_IP=$(cat /etc/hosts|grep 'httpserver '|sed -e 's/\s.*//g')
+
+function setup_rules_and_policies {
+
+		printf "\n\tDownload classes (CEIL = $DOWNLOAD_CEIL kbit/s): \n"
+		printf "\t--------------------------------------- \n"
+		# Specify the various download classes (speeds) here:
+		DOWNLOAD_CEIL=40000
+		DOWNLOAD_CLASSES=(
+		#			ID		priority	min rate	max rate
+					1:10		0		100		100
+				)
+		#
+		# Specify classify_download_* functions here
+		#
+
+
+
+
+
+		printf "\n\tUpload classes (CEIL = $UPLOAD_CEIL kbit/s): \n"
+		printf "\t--------------------------------------- \n"
+		# Specify the various upload classes (speeds) here:
+		UPLOAD_CEIL=5000
+		UPLOAD_CLASSES=(
+		#			ID		priority	min rate	max rate
+					1:10		0		100		100
+				)
+		#
+		# Specify classify_upload_* functions here
+		#
+
+
+
+
+
+		printf "\n\tConnection limits: \n"
+		printf "\t--------------------\n"
+		#
+		# Specify limit_connections_* functions here
+		#
+
+
+
+
+		printf "\n\tPort opening, forwarding & duplication:\n"
+		printf "\t---------------------------------------\n"
+		#
+		# Specify port opening, forwarding, duplication, locking rules here
+		#
+
+}
