@@ -94,7 +94,7 @@ This will make port 22 accessible to the WAN-side.
 
 
 
-### port_forward <protocol> <external_port_number> <internal_host:port_number>
+### port_forward
 Forwards an external port to the specified internal_host:port. For example, if you have an HTTP server on the LAN side with IP address 192.168.0.10, listening to port 80, you can make it accessible from the WAN-side on port 80 with:
 
 **`port_forward tcp 80 192.168.0.10:80`**
@@ -125,7 +125,6 @@ This will make port 22 accessible from the WAN side only to IP addresses that "k
 
 
 ### port_lock_forward 
-port_lock_forward <protocol> <number> <lock sequence> <timeout> <internal_host:port_number>
 Forwards an external port to the specified internal_host:port, only for hosts that "knock" on the specified <lock sequence> of ports, within the specified <timeout> seconds value. The port will then remain open for <timeout> / < number of ports in lock sequence>. For example, if you have an FTP server on the LAN side with IP address 192.168.0.12, listening to port 21, you can make it accessible from the WAN-side on port 1000, only to those who have successfully knocked on the secret knock sequence, using:
 
 **`port_lock_forward tcp 1000 3000,5000,7000,9000 100 192.168.0.12:21`**

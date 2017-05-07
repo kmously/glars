@@ -655,7 +655,7 @@ function port_duplicate {
 function deny_internet {
 #	$1 = host (or subnet) which should be denied Internet access
         printf "\tDenying Internet access to %15s ------> $COLOR %s $COLOREND\n" "" "$1"
-	iptables -I FORWARD -o $EXTERNAL_IF -s $1 -j DROP
+	ipset -A denied_internet $1
 }
 
 # Limit number of incoming connections to
@@ -672,7 +672,7 @@ function limit_connections_to_public_port {
 	if [ $LOG = 1 ] ; then
 		iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW  -j LOG --log-prefix "GLARS: DropPktToPubPort-$2: "
 	fi
-	iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW -j DROP
+	iptables -A INPUT -i $EXTERNAL_IF -p $1 --dport $2 -m state --state NEW -m set ! --match-set whitelisted_ips src -j DROP
 }
 
 
@@ -705,9 +705,9 @@ function limit_connections_to_internal_host {
 	printf "\tlimiting (dest host)$COLOR %20s $COLOREND ------> $COLOR $2 $COLOREND\n" "$1"
 	iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state new -m hashlimit --hashlimit $2 --hashlimit-name $1  -j ACCEPT
 	if [ $LOG = 1 ] ; then
-		iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -j LOG --log-prefix "GLARS: DropPktToHost: "
+		iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -m set ! --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: DropPktToHost: "
 	fi;
-	iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -j DROP
+	iptables -A FORWARD -p tcp -d $1 ! -s $LOCAL_SUBNET -m state --state NEW -m set ! --match-set whitelisted_ips src -j DROP
 }
 
 
@@ -724,21 +724,15 @@ function limit_connections_to_internal_port {
 	printf "\tlimiting (private port)$COLOR %17s $COLOREND ------> $COLOR $3 $COLOREND\n" "($1)  :$2"
 	iptables -A FORWARD -m hashlimit -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET --hashlimit $3 --hashlimit-mode dstip --hashlimit-name "connections_to_forwarded_port_$1_$2" -m state --state new -j ACCEPT
 	if [ $LOG = 1 ] ; then
-		iptables -A FORWARD -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET -m state --state new -j LOG --log-prefix "GLARS: DropPktToFwdPort: "
+		iptables -A FORWARD -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET -m set ! --match-set whitelisted_ips src -m state --state new -j LOG --log-prefix "GLARS: DropPktToFwdPort: "
 	fi;
-	iptables -A FORWARD -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET -m state --state new -j DROP
+	iptables -A FORWARD -p $1 --dport $2 -d $LOCAL_SUBNET ! -s $LOCAL_SUBNET -m set ! --match-set whitelisted_ips src -m state --state new -j DROP
 }
 
 function setup_blacklist_and_whitelist {
-
-
 	IP_COUNT=0
 	if [[ -f "$IP_WHITELIST_FILE" ]]; then
 		echo -en "Setting whitelist from $COLOR $IP_WHITELIST_FILE $COLOREND..."
-		# Normally we do -A (append), but make an exception for whitelisted IPs
-		# to accept them earlier (that way, they don't get affected by rate limiting, etc.)
-		iptables -I INPUT -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
-		iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
 		for i in `cat $IP_WHITELIST_FILE|grep -v "\s*#"`; do
 			# echo "Whitelisting $i"
 			IP_COUNT=$(($IP_COUNT+1))
@@ -753,14 +747,6 @@ function setup_blacklist_and_whitelist {
 	IP_COUNT=0
 	if [[ -f "$IP_BLACKLIST_FILE" ]]; then
 		echo -en "Setting blacklist from $COLOR $IP_BLACKLIST_FILE $COLOREND..."
-		# Normally we do -A (append), but make an exception for blacklisted IPs
-		# to drop them earlier
-		iptables -I INPUT -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -j DROP
-		iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -j DROP
-		if [ $LOG = 1 ] ; then
-			iptables -I INPUT -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -j LOG --log-prefix "GLARS: DropBlacklistInput: "
-			iptables -I FORWARD -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -j LOG --log-prefix "GLARS: DropBlacklistFwd: "
-		fi;
 		for i in `cat $IP_BLACKLIST_FILE|grep -v "\s*#"`; do 
 			# echo "Blacklisting $i"
 			IP_COUNT=$(($IP_COUNT+1))
@@ -875,6 +861,10 @@ function port_lock_forward {
 	done;
 
 
+	# Whitelisted IPs don't have to knock (straight to "passed")
+	iptables -t nat -A KNOCKING_FORWARD -m set --match-set whitelisted_ips src -j passed_fwd_p_$1_$2
+
+	# Everyone else starts at gate 1
 	iptables -t nat -A KNOCKING_FORWARD -j gate_$1_$2_1
 }
 
@@ -947,8 +937,13 @@ function port_lock {
 		iptables -A KNOCKING -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_$i -j $GATENAME
 	done;
 
+	# Whitelisted IPs don't have to knock (straight to "passed")
+	iptables -A KNOCKING -m set --match-set whitelisted_ips src -j passed_p_$1_$2
 
+	# Everyone else starts at gate 1
 	iptables -A KNOCKING -j gate_$1_$2_1
+
+
 }
 
 
@@ -957,7 +952,7 @@ function finalize_rules_and_policies {
 	iptables -A INPUT -i $EXTERNAL_IF -p icmp -j ACCEPT
 	iptables -A INPUT -j KNOCKING
 	iptables -A PREROUTING -t nat -j KNOCKING_FORWARD
-	iptables -A INPUT -i $EXTERNAL_IF -j DROP
+	iptables -A INPUT -i $EXTERNAL_IF -m set ! --match-set whitelisted_ips src -j DROP
 	echo "done"
 }
 
@@ -972,9 +967,40 @@ function pre_initialize_rules_and_policies {
 	# Create empty sets
         ipset -N blacklisted_ips nethash
         ipset -N whitelisted_ips nethash
+	ipset -N denied_internet nethash
 
 	# Add default early rules
 	iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+
+
+
+	if [ $LOG = 1 ] ; then
+		iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set denied_internet  src -j LOG --log-prefix "GLARS: DropDeniedInternet: "
+	fi;
+	iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set denied_internet src -j DROP
+
+	if [ $LOG = 1 ] ; then
+		iptables -A INPUT -i $EXTERNAL_IF -m conntrack --ctstate NEW -m set --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: AcceptWhitelistInput: "
+	fi;
+#	iptables -A INPUT -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
+
+	if [ $LOG = 1 ] ; then
+		iptables -A FORWARD -i $EXTERNAL_IF -m conntrack --ctstate NEW -m set --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: AcceptWhiteklistFwd: "
+	fi;
+#	iptables -A FORWARD -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
+
+	if [ $LOG = 1 ] ; then
+		iptables -A INPUT -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -m set ! --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: DropBlacklistInput: "
+	fi;
+	iptables -A INPUT -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -m set ! --match-set whitelisted_ips src -j DROP
+
+	if [ $LOG = 1 ] ; then
+		iptables -A FORWARD -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -m set ! --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: DropBlacklistFwd: "
+	fi;
+	iptables -A FORWARD -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -m set ! --match-set whitelisted_ips src -j DROP
+
+
 
 	echo "done"
 }
