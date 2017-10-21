@@ -133,16 +133,17 @@ LOG=1
 
 # (Optional) Set COLOR to one of
 #
-# green pink red blue grey yellow cyan white
+# green pink red blue yellow cyan white
 #
 # or unset it if you don't want colors in the output
-COLOR=yellow
+COLOR=random
 
 
 
 # (Optional) Set to 1 if you want BOLD in the output
 # Set to 0 if you do not want BOLD in the output
-BOLD=1
+# Set to 'random' if you're an extreme person who loves living on the edge
+BOLD=random
 
 
 
@@ -313,14 +314,21 @@ BOLD=1
 
 
 
+if [ "$BOLD" = "random" ] ; then
+	NUM=$(( RANDOM % 2  ))
+	case "$NUM" in
+	0) BOLD=1
+	    ;;
+	1) BOLD=0
+	    ;;
+	esac
+fi
 
 
 
 
 
 
-
-GREY="\033[$BOLD;30m"
 RED="\033[$BOLD;31m"
 GREEN="\033[$BOLD;32m"
 YELLOW="\033[$BOLD;33m"
@@ -333,42 +341,51 @@ COLOREND="\033[0m"
 
 
 
-
-if [ "$COLOR" = "green" ] ; then
-	COLOR=$GREEN
-	COLOREND="\033[0m"
-elif [ "$COLOR" = "grey" ] ; then
-	COLOR=$GREY
-	COLOREND="\033[0m"
-elif [ "$COLOR" = "red" ] ; then
-	COLOR=$RED
-	COLOREND="\033[0m"
-elif [ "$COLOR" = "yellow" ] ; then
-	COLOR=$YELLOW
-	COLOREND="\033[0m"
-elif [ "$COLOR" = "blue" ] ; then
-	COLOR=$BLUE
-	COLOREND="\033[0m"
-elif [ "$COLOR" = "pink" ] ; then
-	COLOR=$PINK
-	COLOREND="\033[0m"
-elif [ "$COLOR" = "cyan" ] ; then
-	COLOR=$CYAN
-	COLOREND="\033[0m"
-elif [ "$COLOR" = "white" ] ; then
+if [ "$COLOR" = "random" ] ; then
+	NUM=$(( RANDOM % 7 ))
+	case "$NUM" in
+	0)
 	COLOR=$WHITE
-	COLOREND="\033[0m"
+	    ;;
+	1)
+	COLOR=$RED
+	    ;;
+	2)
+	COLOR=$GREEN
+	    ;;
+	3)
+	COLOR=$YELLOW
+	    ;;
+	4)
+	COLOR=$BLUE
+	    ;;
+	5)
+	COLOR=$PINK
+	    ;;
+	6)
+	COLOR=$CYAN
+	    ;;
+	esac
 else
-	if [ "$BOLD" = "1" ]; then
-		COLOR="\033[1m "
-		COLOREND="\033[0m"
-	else
-		COLOREND=
-		COLOR=
-	fi
+
+	if [ "$COLOR" = "green" ] ; then
+		COLOR=$GREEN
+	elif [ "$COLOR" = "red" ] ; then
+		COLOR=$RED
+	elif [ "$COLOR" = "yellow" ] ; then
+		COLOR=$YELLOW
+	elif [ "$COLOR" = "blue" ] ; then
+		COLOR=$BLUE
+	elif [ "$COLOR" = "pink" ] ; then
+		COLOR=$PINK
+	elif [ "$COLOR" = "cyan" ] ; then
+		COLOR=$CYAN
+	elif [ "$COLOR" = "white" ] ; then
+		COLOR=$WHITE
+	fi;
+
+
 fi;
-
-
 
 
 
@@ -818,9 +835,9 @@ function port_lock_forward {
 	# "drop traffic coming from outside" rule unless the local host "knocks" first.
 	# The following rule exempts LAN-side traffic from having to go through the knock-tests to get to the locked port.
 	# I guess in accordance with the general "trust the LAN-side" approach taken elsewhere
-	iptables -t nat -A KNOCKING_FORWARD -i $INTERNAL_IF -p $1 --dport $2 -j DNAT --to-destination $5
+	iptables -t nat -A KNOCKING_FORWARD -i $INTERNAL_IF -p $1 -d $PUBLIC_IP --dport $2 -j DNAT --to-destination $5
 
-	printf "\tLocking & forwarding port $COLOR %13s $COLOREND ------> $COLOR %s %s (%s seconds) $COLOREND\n" "($1)  :$2" "$5" "$3" "$4"
+	printf "\tLocking & forwarding port $COLOR %14s $COLOREND ------> $COLOR %s %s (%s seconds) $COLOREND\n" "($1)  :$2" "$5" "$3" "$4"
 	LOCK_SEQUENCE=$(echo $3 | sed -e 's/,/ /g')
 	COUNT=0
 	for i in $LOCK_SEQUENCE; do
@@ -896,7 +913,7 @@ function port_lock {
 #       $4 = seconds
 
 
-	printf "\tLocking (public port)$COLOR %17s $COLOREND ------> $COLOR %s (%s seconds) $COLOREND\n" "($1)  :$2" "$3" "$4"
+	printf "\tLocking (public port)$COLOR %19s $COLOREND ------> $COLOR %s (%s seconds) $COLOREND\n" "($1)  :$2" "$3" "$4"
 	LOCK_SEQUENCE=$(echo $3 | sed -e 's/,/ /g')
 	COUNT=0
 	for i in $LOCK_SEQUENCE; do
@@ -976,9 +993,9 @@ function pre_initialize_rules_and_policies {
 
 
 	if [ $LOG = 1 ] ; then
-		iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set denied_internet  src -j LOG --log-prefix "GLARS: DropDeniedInternet: "
+		iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set denied_internet  src -j LOG --log-prefix "GLARS: RejectDeniedInternet: "
 	fi;
-	iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set denied_internet src -j DROP
+	iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set denied_internet src -j REJECT
 
 	if [ $LOG = 1 ] ; then
 		iptables -A INPUT -i $EXTERNAL_IF -m conntrack --ctstate NEW -m set --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: AcceptWhitelistInput: "
