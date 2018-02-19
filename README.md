@@ -38,7 +38,7 @@ Most home routers do several things in addition to "routing". Many home routers 
  4) **Provide layer 3 routing** (allows, and controls, the flow of traffic from one network to the other. Usually one network is a "local" network, and the other an "external" network (usually the Internet). This is the definition of "routing".
 
 
-GLARS is only concerned with (4), "routing". As such, by itself, it will likely be insufficient as a replacement for most people's use-cases. However, in combination with other GNU/Linux software and/or hardware extensions that provide DHCP/DNS/Wi-Fi functionality, the end some can act as very powerful and customizable alternative to any home (or even enterprise-level) routers.  It is also very easy to use a GNU/Linux box running GLARS _in combination_ with with common home routers, such that the Wi-Fi/DNS/DHCP is provided by the existing home router, but the actual routing is done by GLARS, thus getting the best of both worlds.
+GLARS is only concerned with (4), "routing". As such, by itself, it will likely be insufficient as a replacement for most people's use-cases. However, in combination with other GNU/Linux software and/or hardware extensions that provide DHCP/DNS/Wi-Fi functionality, the end result can act as very powerful and customizable alternative to any home (or even enterprise-level) routers.  It is also very easy to use a GNU/Linux box running GLARS _in combination_ with common home routers, such that the Wi-Fi/DNS/DHCP is provided by the existing home router, but the actual routing is done by GLARS, thus getting the best of both worlds.
 
 It is unlikely that GLARS will gain DHCP or DNS functionality in the future, however, it may gain the ability to integrate or interact with common existing DHCP/DNS software, in order to help "centralize" all networking settings.
 
@@ -48,9 +48,9 @@ It is unlikely that GLARS will gain DHCP or DNS functionality in the future, how
 
 GLARS provides an API that facilitates common routing functionality. It is essentially a bunch of helper functions that automate the generation of iptables, ipset and tc rules and can abstract some of the tricky things associated with using them correctly.
 
-GLARS will perform NAT (Network Address Translation) on traffic leaving the WAN interface. This makes it seem like all devices on the LAN-side are a single IP address on the Internet. This is the default behaviour of most home routers. NAT is the primary reason that a distinction needs to be made between $EXTERNAL_IF and $INTERNA_IF.
+GLARS will perform NAT (Network Address Translation) on traffic leaving the WAN interface. This makes it seem like all devices on the LAN-side are a single IP address on the Internet. This is the default behaviour of most home routers. NAT is the primary reason that a distinction needs to be made between $EXTERNAL_IF and $INTERNAL_IF.
 
-From the point of view of the GLARS router, there is no concept of "download" or "upload" - all traffic is coming from one interface and (usually) going into the other. However, to make it easy to conceptualize and control the behaviour of traffic, GLARS defines "download traffic" as traffic coming from $EXTERNAL_IF and leaving on $INTERNAL_IF. Similarly, GLARS defins "upload traffic" as traffic coming from $INTERNAL_IF and leaving on $EXTERNAL_IF. Thus when speaking of controlling "download traffic", we're speaking of controlling how much bandwidth hosts on the LAN-side can use for downloading. When we speak of "upload traffic", we're speaking of the bandwidth that hosts on the LAN-side use for uploading.
+From the point of view of the GLARS router, there is no concept of "download" or "upload" - all traffic is coming from one interface and (usually) going into the other. However, to make it easy to conceptualize and control the behaviour of traffic, GLARS defines "download traffic" as traffic coming from $EXTERNAL_IF and leaving on $INTERNAL_IF. Similarly, GLARS defines "upload traffic" as traffic coming from $INTERNAL_IF and leaving on $EXTERNAL_IF. Thus when speaking of controlling "download traffic", we're speaking of controlling how much bandwidth hosts on the LAN-side can use for downloading. When we speak of "upload traffic", we're speaking of the bandwidth that hosts on the LAN-side use for uploading.
 
 In general, GLARS assumes the LAN-side is trustworthy but the WAN-side isn't. Thus, by default, ports are open to the LAN side but closed to WAN-side. LAN-side hosts don't need to "knock" to get to "locked" ports, for example, but WAN-side hosts do.
 
@@ -153,6 +153,10 @@ Duplicates a local port. For example, if your GLARS router is running an SSH ser
 
 
 
+### deny__internet
+Disallows traffic from an internal host or an internal subnet. Local traffic to and from this host/subnet will be unaffected, but no traffic will be forwarded from this host/subnet to the external network.
+
+**`deny_internet 192.168.31.19 `**
 
 
 

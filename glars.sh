@@ -439,6 +439,7 @@ function initialize_bw_classes {
 		IFACE=$EXTERNAL_IF
 		CEIL=$UPLOAD_CEIL
 		UPLOAD_CLASSES_HAVE_BEEN_INITIALIZED=1
+		printf "\n\tUpload ceiling is $COLOR %s $COLOREND kbit/s\n\n" "$CEIL"
 	elif [ "$1" = "download" ]; then
 		# The following syntax means CLASSES is an array () 
 		# made up of the expanded expression ${} that is the 
@@ -448,6 +449,7 @@ function initialize_bw_classes {
 		IFACE=$INTERNAL_IF
 		CEIL=$DOWNLOAD_CEIL
 		DOWNLOAD_CLASSES_HAVE_BEEN_INITIALIZED=1
+		printf "\n\tDownload ceiling is $COLOR %s $COLOREND kbit/s\n\n" "$CEIL"
 	fi
 
 
