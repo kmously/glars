@@ -853,17 +853,23 @@ function port_lock_forward {
 		# For anything after the first knock, we need to remove the last mark
 		if [[ $COUNT -gt 1 ]] ; then
 			LASTCOUNT=$((COUNT-1))
-			iptables -t nat -A $GATENAME -p $1 -m recent --remove --name auth_$1_$2_"$UNIQUEKEY"_$LASTCOUNT
 		fi;
 		if [ $LOG = 1 ] ; then
 			iptables -t nat -A $GATENAME -p $1 --dport $i -j LOG --log-prefix "GLARS: $GATENAME "
 		fi;
-		iptables -t nat -A $GATENAME -p $1 --dport $i -m recent --name auth_$1_$2_"$UNIQUEKEY"_$COUNT --set -j ACCEPT
+
+		iptables -t nat -A $GATENAME -p $1 --dport $i -m recent --name auth_"$i"_$COUNT --set -j ACCEPT
+
 		# For anything after the first knock, we need to redirect traffic to first gate
 		if [[ $COUNT -gt 1 ]] ; then
 			iptables -t nat -A $GATENAME -j gate_$1_$2_"$UNIQUEKEY"_1
 		fi;
+		LASTPORT=$i
 	done
+
+	# Number of knocks in sequence is $COUNT - save it.
+	LOCK_LENGTH=$COUNT
+
 	iptables -t nat -N passed_fwd_p_$1_$2_"$UNIQUEKEY"
 	if [ $LOG = 1 ] ; then
 		iptables -t nat -A passed_fwd_p_$1_$2_"$UNIQUEKEY" -p $1 --dport $2 -j LOG --log-prefix "GLARS: accept_p_$2_$UNIQUEKEY "
@@ -873,13 +879,18 @@ function port_lock_forward {
 
 
 	SECONDS_PER_GATE=$(($4/$COUNT))
-	iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_"$UNIQUEKEY"_$COUNT -j passed_fwd_p_$1_$2_"$UNIQUEKEY"
-	for ((i=$COUNT-1; i>0; i--)); do
-		NEXTGATE=$((i+1))
+	iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_"$LASTPORT"_$COUNT -j passed_fwd_p_$1_$2_"$UNIQUEKEY"
+	COUNT=0
+	for i in $LOCK_SEQUENCE; do
+		COUNT=$((COUNT+1))
+		if [ $COUNT = $LOCK_LENGTH ] ; then
+			# The jump from the last gate to the "passed" gate is already done (above) - break here
+			break
+		fi
+		NEXTGATE=$((COUNT+1))
 		GATENAME=gate_$1_$2_"$UNIQUEKEY"_$NEXTGATE
-		iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_$1_$2_"$UNIQUEKEY"_$i -j $GATENAME
+		iptables -t nat -A KNOCKING_FORWARD -m recent --rcheck --seconds $SECONDS_PER_GATE --name auth_"$i"_$COUNT -j $GATENAME
 	done;
-
 
 	# Whitelisted IPs don't have to knock (straight to "passed")
 	iptables -t nat -A KNOCKING_FORWARD -m set --match-set whitelisted_ips src -j passed_fwd_p_$1_$2_"$UNIQUEKEY"
