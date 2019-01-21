@@ -153,14 +153,33 @@ Duplicates a local port. For example, if your GLARS router is running an SSH ser
 
 
 
-### deny__internet
+### deny_internet
 Disallows traffic from an internal host or an internal subnet. Local traffic to and from this host/subnet will be unaffected, but no traffic will be forwarded from this host/subnet to the external network.
 
 **`deny_internet 192.168.31.19 `**
 
 
 
+### limit_connections_to_public_port
+Limit the number of connections that can be made to a public port on this router
+
+**`limit_connections_to_public_port tcp 22 12/min`**
+
+
+
+### limit_connections_to_internal_host
+Limit the number of connections that can be made to an internal host on the network
+This is the sum of all connections made to this host on all its forwarded ports.
+
+**`limit_connections_to_internal_host $FOO_IP 10/min`**
+
+
+### limit_connections_to_internal_port
+Limit the number of connections that can be made to a port that is forwared to a host on the internal network
+
+**`limit_connections_to_internal_port 80 60/min`**
 
 
 ### TODO:
-Document bandwidth classes, classify_* and limit_* functions.
+Add limit_connections_from_* functions
+Update documentation to explain bandwidth classes and classify_* functions.

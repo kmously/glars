@@ -14,18 +14,18 @@ function setup_rules_and_policies {
 
 	###############################################################
 	# Bandwidth control matrices specify how bandwidth should be 
-	# prioritized in case of contention.
+	# classified/prioritized in case of contention.
 	# More classes can be added
 	# Min and Max rates are percentages of CEIL
-	# Make sure that:
-	# - ID is unique (per matrix)
+	# When setting up bandwidth classes, ake sure that:
+	# - ID of each class is unique (per matrix)
 	# - the first ID is always called '1:10'
 	# - the total of all 'min rate' values equals 100
 	# - none of the 'max rate' values exceeds 100
 	# 
 	# The first class (1:10) will be the default class for all
-	# traffic in that direction, unless it is classified otherwise
-	# in a subsequent 'classify' rule
+	# traffic in that direction, unless it is reclassified as some-
+	# thing else in a subsequent 'classify' rule
 	#
 	###############################################################
 
@@ -50,7 +50,6 @@ function setup_rules_and_policies {
 					1:12		2		50		100
 					1:13		2		20		100
 				)
-		initialize_bw_classes download;
 
 		printf "\n"
 		printf "\tDownload rules: \n"
@@ -69,7 +68,9 @@ function setup_rules_and_policies {
 		# SSH too!
 		classify_download_from_port tcp 22 1:11
 
-		# Downloads by 'dummy' are low priority
+		# 'dummy' is always downloading files 24/7
+		# we don't want it slowing everyone else
+		# Set downloads by 'dummy' as low priority
 		classify_download_by_host $DUMMY_IP 1:13
 
 		# Downloads by 'foo' are high priority
@@ -98,7 +99,6 @@ function setup_rules_and_policies {
 					1:13		2		20		100
 					1:14		3		5		50
 				)
-		initialize_bw_classes upload;
 
 
 		printf "\n"
@@ -111,12 +111,13 @@ function setup_rules_and_policies {
 		# By default, regular traffic goes to the regular lane
 		classify_upload_from_host $LOCAL_SUBNET 1:12
 
-		# We're hosting HTTP servers, let's keep our users happy
+		# We have an HTTP server on our network
+		# let's keep its users happy
 		classify_upload_from_port tcp 80 1:11
 		classify_upload_from_port tcp 443 1:11
 
 		# BAR is a dedicated torrent server
-		# so its uploads are low priority (and capped)
+		# so its uploads are low priority (and capped at 50%)
 		classify_upload_from_host $BAR_IP 1:14
 
 
@@ -143,7 +144,7 @@ function setup_rules_and_policies {
 		# limit attacks on our SSH (22) port
 		limit_connections_to_public_port tcp 22 10/min
 
-		# limit attacks on our main server
+		# limit attacks on our server
 		limit_connections_to_internal_host $FOO_IP 200/min
 
 		printf "\n"
@@ -155,7 +156,8 @@ function setup_rules_and_policies {
 	echo "-----------------"
 
 	# Duplicate SSH to port 8080 as that's one of the most commonly unblocked ports
-	# (I would duplicate to 80 and 443 as well, but I need to forward those)
+	# (I would duplicate to 80 and 443 as well, but I need to forward those to the
+	# HTTP server)
 	port_duplicate tcp 22 8080
 
 
