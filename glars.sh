@@ -703,7 +703,6 @@ function restrict_internet {
 	echo $PROTECTED_HOSTS | grep -q $HOST
 	if [ $? = 1 ] ; then
 		PROTECTED_HOSTS="$PROTECTED_HOSTS $HOST"
-		echo PROTECTED_HOSTS is now "$PROTECTED_HOSTS"
 	fi
 
         printf "\tAdding host to protected zone $COLOR %15s $COLOREND ------> $COLOR %s $COLOREND\n" "$HOST" "$IPSET"
@@ -1041,7 +1040,6 @@ function finalize_rules_and_policies {
 	iptables -A INPUT -i $EXTERNAL_IF -m set ! --match-set whitelisted_ips src -j DROP
 
 	for HOST in $PROTECTED_HOSTS; do
-		echo -n "Restricting: $HOST"
 		iptables -A FORWARD -o $EXTERNAL_IF -s $HOST -j REJECT
 	done;
 	echo "done"
