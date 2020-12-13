@@ -154,14 +154,49 @@ Duplicates a local port. For example, if your GLARS router is running an SSH ser
 
 
 ### deny_internet
-Disallows traffic from an internal host or an internal subnet. Local traffic to and from this host/subnet will be unaffected, but no traffic will be forwarded from this host/subnet to the external network.
+Disallows traffic from an internal host or an internal subnet using REJECT. Local traffic to and from this host/subnet will be unaffected, but no traffic will be forwarded from this host/subnet to the external network.
 
 **`deny_internet 192.168.31.19 `**
+
+
+### drop_internet
+Disallows traffic from an internal host or an internal subnet using DROP. Local traffic to and from this host/subnet will be unaffected, but no traffic will be forwarded from this host/subnet to the external network.
+
+**`drop_internet 192.168.31.19 `**
+
+
+### add_safe_destination
+To be used in conjuction with restrict_internet. Adds IP addresses to a protected zone
+NOTE: The protected zone is a static list from the perspective of GLARS. The IP addresses of these domains will get resolved *only* at the time that GLARS is run. If at a later time the domain changes IP, there will be no way to update the IP addresses in the protected zone, until glars is re-run.
+This function is not really intended to be used directly. A much better way to add destinations to a protected zone (and keep them up to date, as well as have the ability to match subdomains, etc.) is to use the ipset feature of the dnsmasq DNS/DHCP server. This is mainly for debugging purposes.
+
+You can determine what domains are needed for a particular website/app by listening to DNS requests while loading your website/app and adding the domains that are needed, until all functionality is achieved. See also the ipset feature in dnsmasq.
+
+The following 2 domains, when used with restrict_internet will allow a host on the local network to connect *only* to wikipedia.
+You can add as many domains as you wish.
+
+**`add_safe_destination safe-sites-1 www.wikipedia.org`**
+**`add_safe_destination safe-sites-1 upload.wikimedia.org`**
+
+
+### restrict_internet
+Similar to deny_internet, but also accepts a "protected zone" (basically, the name of ipset). This set of destinations will be reachable by the host. Any other destination will be treated similar to deny_internet.
+By default, protected zones (ipsets) are empty. You can add destinations to a protected zone using add_safe_destination
+You can add any number of hosts to a protected zone, and can add a host to any number of protected zones.
+
+NOTE: This feature is really intended to be used with the ipset feature in dnsmasq - that way subdomains can also be matched, and the list can be kept dynamically updated. This can be a very effective way of sandboxing certain untrusted devices (or people!)
+
+The following command, used with the 2 add_safe_destination examples above, will allow $my_android_device to reach nothing on the Internet except Wikipedia.
+
+
+**`restrict_internet $my_android_device safe-sites-1`**
+
 
 
 
 ### limit_connections_to_public_port
 Limit the number of connections that can be made to a public port on this router
+Note that this implies port_open() on that port
 
 **`limit_connections_to_public_port tcp 22 12/min`**
 

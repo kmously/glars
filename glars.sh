@@ -670,11 +670,67 @@ function port_duplicate {
 
 
 
-# Deny Internet access to a specific host or subnet
+# Deny Internet access from specific host or subnet
 function deny_internet {
 #	$1 = host (or subnet) which should be denied Internet access
         printf "\tDenying Internet access to %15s ------> $COLOR %s $COLOREND\n" "" "$1"
 	ipset -A denied_internet $1
+}
+
+
+
+# Allow Internet access only to specific destinations
+#
+#	$1 = host (or subnet) which we are protecting
+#	$2 = "protection zone" (aka an ipset)
+#
+# A protection zone is basically the name of an ipset
+# The protected host will be forbidden from reaching outside traffic, just
+# like with deny_internet -- however, destinations in the protection zone
+# will still be reachable.
+#
+# Local traffic is unaffected.
+#
+function restrict_internet {
+
+	HOST=$1
+	IPSET=$2
+
+	# Update the list of protected hosts by adding this new host
+	# This will be needed in finalize_rules_and_policies to add the reject rules there
+	# If we try to reject the hosts traffic here, we could possibly add more than one
+	# rejection rule for the same host - and all rules after the first will be unreachable
+	echo $PROTECTED_HOSTS | grep -q $HOST
+	if [ $? = 1 ] ; then
+		PROTECTED_HOSTS="$PROTECTED_HOSTS $HOST"
+		echo PROTECTED_HOSTS is now "$PROTECTED_HOSTS"
+	fi
+
+        printf "\tAdding host to protected zone $COLOR %15s $COLOREND ------> $COLOR %s $COLOREND\n" "$HOST" "$IPSET"
+	ipset -N $IPSET nethash -exist
+
+	if [ $LOG = 2 ] ; then   # disabling this as it seems to produce quite a bit of logs
+		iptables -A FORWARD -o $EXTERNAL_IF -m set ! --match-set "$IPSET" dst -s $HOST -j LOG --log-prefix "GLARS: Reject$HOST: "
+	fi;
+
+	iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set $IPSET dst -s $HOST -j ACCEPT
+}
+
+#
+function add_safe_destination {
+	PROTECTED_ZONE=$1
+	SAFE_SITE=$2
+
+        printf "\tAdding site to protected zone $COLOR %15s $COLOREND ------> $COLOR %s $COLOREND\n" "$SAFE_SITE" "$PROTECTED_ZONE"
+	ipset -N $PROTECTED_ZONE nethash -exist
+	ipset -A $PROTECTED_ZONE $SAFE_SITE
+}
+
+# drop Internet access from specific host or subnet
+function drop_internet {
+#	$1 = host (or subnet) which should be dropped Internet access
+        printf "\tDropping Internet access to %15s ------> $COLOR %s $COLOREND\n" "" "$1"
+	ipset -A dropped_internet $1
 }
 
 # Limit number of incoming connections to
@@ -983,6 +1039,11 @@ function finalize_rules_and_policies {
 	iptables -A INPUT -j KNOCKING
 	iptables -A PREROUTING -t nat -j KNOCKING_FORWARD
 	iptables -A INPUT -i $EXTERNAL_IF -m set ! --match-set whitelisted_ips src -j DROP
+
+	for HOST in $PROTECTED_HOSTS; do
+		echo -n "Restricting: $HOST"
+		iptables -A FORWARD -o $EXTERNAL_IF -s $HOST -j REJECT
+	done;
 	echo "done"
 }
 
@@ -998,11 +1059,10 @@ function pre_initialize_rules_and_policies {
         ipset -N blacklisted_ips nethash
         ipset -N whitelisted_ips nethash
 	ipset -N denied_internet nethash
+	ipset -N dropped_internet nethash
 
 	# Add default early rules
 	iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-
-
 
 
 	if [ $LOG = 1 ] ; then
@@ -1010,13 +1070,31 @@ function pre_initialize_rules_and_policies {
 	fi;
 	iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set denied_internet src -j REJECT
 
+
+
+
+
+	# With these two lines, a host can be denied/dropped from internet access but still accept incoming connections from outside
+	# save them for later.
+
+#	iptables -A FORWARD -o $EXTERNAL_IF -p tcp --tcp-flags SYN,ACK SYN,ACK -m set --match-set dropped_internet src -j ACCEPT
+#	iptables -A FORWARD -o $EXTERNAL_IF -p tcp --tcp-flags ACK ACK -m set --match-set dropped_internet src -j ACCEPT
+
+
+	if [ $LOG = 1 ] ; then
+		iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set dropped_internet  src -j LOG --log-prefix "GLARS: RejectDroppedInternet: "
+	fi;
+
+	iptables -A FORWARD -o $EXTERNAL_IF -m set --match-set dropped_internet src -j DROP
+
+
 	if [ $LOG = 1 ] ; then
 		iptables -A INPUT -i $EXTERNAL_IF -m conntrack --ctstate NEW -m set --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: AcceptWhitelistInput: "
 	fi;
 #	iptables -A INPUT -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
 
 	if [ $LOG = 1 ] ; then
-		iptables -A FORWARD -i $EXTERNAL_IF -m conntrack --ctstate NEW -m set --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: AcceptWhiteklistFwd: "
+		iptables -A FORWARD -i $EXTERNAL_IF -m conntrack --ctstate NEW -m set --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: AcceptWhitelistFwd: "
 	fi;
 #	iptables -A FORWARD -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
 
@@ -1064,8 +1142,8 @@ $COLOREND
 		printf "No rules specified\n"
 	fi;
 
-	finalize_rules_and_policies;
 	setup_blacklist_and_whitelist;
+	finalize_rules_and_policies;
 }
 
 main;
