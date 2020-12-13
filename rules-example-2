@@ -3,6 +3,9 @@ FOO_IP=$(cat /etc/hosts|grep 'foo '|sed -e 's/\s.*//g')
 BAR_IP=$(cat /etc/hosts|grep 'bar '|sed -e 's/\s.*//g')
 DUMMY_IP=192.168.31.45
 VNCSERVER=192.168.31.50
+SMART_TV=192.168.31.48
+LAPTOP=192.168.31.33
+ANDROID_DEVICE=192.168.31.40
 
 
 function setup_rules_and_policies {
@@ -174,5 +177,24 @@ function setup_rules_and_policies {
 	# FOO is hosting an HTTP server, so lets forward ports 80 and 443
 	port_forward tcp    80  $FOO_IP:80
 	port_forward tcp   443  $FOO_IP:443
+
+
+
+
+	# The TV really has no business going to the Internet:
+	deny_internet $SMART_TV
+
+
+	# I want my android device to be blocked from the Internet,
+	# EXCEPT for Wikipedia:
+	restrict_internet $ANDROID_DEVICE android_safenet
+	add_safe_destination android_safenet www.wikipedia.org
+	add_safe_destination android_safenet upload.wikimedia.org
+
+	# For my laptop, I want Wikipedia and Github
+	add_safe_destination laptop_safenet github.com
+	add_safe_destination laptop_safenet githubassets.com
+	restrict_internet $LAPTOP laptop_safenet
+	restrict_internet $LAPTOP android_safenet
 
 }
