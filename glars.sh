@@ -409,8 +409,8 @@ function clear_all_configurations {
 	iptables -t nat -X
 	ipset flush
 	ipset destroy
-	tc qdisc del dev $INTERNAL_IF root
-	tc qdisc del dev $EXTERNAL_IF root
+	tc qdisc del dev $INTERNAL_IF root > /dev/null 2>&1
+	tc qdisc del dev $EXTERNAL_IF root > /dev/null 2>&1
 	echo -e "done"
 }
 
@@ -1111,6 +1111,19 @@ function pre_initialize_rules_and_policies {
 	echo "done"
 }
 
+function precheck {
+	which ipset > /dev/null
+	if [ $? = 1 ] ; then
+		echo "FATAL: GLARS requires ipset to operate. Please install ipset and re-run"
+		exit 1
+	fi
+
+
+	which tc > /dev/null
+	if [ $? = 1 ] ; then
+		echo "WARNING: GLARS requires 'tc' for the classify_* functionality. You will get errors if you try to use those functions"
+	fi
+}
 
 function main {
 	echo -e \
@@ -1144,4 +1157,5 @@ $COLOREND
 	finalize_rules_and_policies;
 }
 
+precheck
 main;
