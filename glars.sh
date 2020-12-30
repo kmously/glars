@@ -407,8 +407,8 @@ function clear_all_configurations {
 	iptables -F -t nat
 	iptables -X 
 	iptables -t nat -X
-	ipset -F
-	ipset -X
+	ipset flush
+	ipset destroy
 	tc qdisc del dev $INTERNAL_IF root
 	tc qdisc del dev $EXTERNAL_IF root
 	echo -e "done"
