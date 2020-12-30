@@ -700,7 +700,7 @@ function restrict_internet {
 	# This will be needed in finalize_rules_and_policies to add the reject rules there
 	# If we try to reject the hosts traffic here, we could possibly add more than one
 	# rejection rule for the same host - and all rules after the first will be unreachable
-	echo $PROTECTED_HOSTS | grep -q $HOST
+	echo $PROTECTED_HOSTS | grep -q -e "$HOST " -e "$HOST$"
 	if [ $? = 1 ] ; then
 		PROTECTED_HOSTS="$PROTECTED_HOSTS $HOST"
 	fi
