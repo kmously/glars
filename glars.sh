@@ -72,7 +72,7 @@ LOCAL_SUBNET=192.168.31.0/24
 # It can be explicitly specified here if it is a static IP, or it can be 
 # queried from the $EXTERNAL_IF, using for example 'ifconfig' or 'ip addr'
 # if it is a dynamically assigned IP
-PUBLIC_IP=$(ifconfig $EXTERNAL_IF|grep inet.*netmas|sed -e "s/netmask.*//g"|sed -e "s/.*inet.//g"|sed -e "s/ *//g")
+PUBLIC_IP=$(ip ad show $EXTERNAL_IF |grep "inet "|sed -e 's/.* inet //g'|sed -e 's/\/.*//g')
 
 
 
