@@ -52,7 +52,7 @@ GLARS will perform NAT (Network Address Translation) on traffic leaving the WAN 
 
 From the point of view of the GLARS router, there is no concept of "download" or "upload" - all traffic is coming from one interface and (usually) going into the other. However, to make it easy to conceptualize and control the behaviour of traffic, GLARS defines "download traffic" as traffic coming from $EXTERNAL_IF and leaving on $INTERNAL_IF. Similarly, GLARS defines "upload traffic" as traffic coming from $INTERNAL_IF and leaving on $EXTERNAL_IF. Thus when speaking of controlling "download traffic", we're speaking of controlling how much bandwidth hosts on the LAN-side can use for downloading. When we speak of "upload traffic", we're speaking of the bandwidth that hosts on the LAN-side use for uploading.
 
-In general, GLARS assumes the LAN-side is trustworthy but the WAN-side isn't. Thus, by default, ports are open to the LAN side but closed to WAN-side. LAN-side hosts don't need to "knock" to get to "locked" ports, for example, but WAN-side hosts do.
+In general, GLARS assumes the LAN-side is trustworthy but the WAN-side isn't. Thus, by default, ports are open to the LAN side but closed to WAN-side. LAN-side hosts don't need to "knock" to get to "locked" ports, for example, but WAN-side hosts do. LAN side hosts can reach the WAN-side (Internet) by default unless they are explicitly restricted.
 
 For another example, if you set up your GLARS box to be accessible via SSH, which runs by default on port TCP:22, then by default, your SSH service will be accessible from the LAN-side. To make your SSH service accessible via the WAN-side (usually the Internet), you can add the following rule to your "rules" file:
 
@@ -60,10 +60,20 @@ For another example, if you set up your GLARS box to be accessible via SSH, whic
 **`port_open tcp 22`**
 
 
+## The 'rules' file
+
+The behaviour of the router can be modified and fine-tuned further with the use of a 'rules' file. This is a text file that can be used to provide 3 bash functions for glars to execute: 
+ - **`pre_glars`**
+   - this hook will be called by GLARS before it does anything. You can put anything you here that needs to happen before all the settings are applied
+ - **`setup_rules_and_policies`**
+   - this is where the API (see below) can be used
+ - **`post_glars`**
+   - this hook will be called by GLARS after it is done. You can put anything you here that needs to happen after all the settings are applied
+
 
 ## API
 
-These functions can be used in a "rules" file to specify advanced, non-default settings. See the rules-template file to see what a minimum rules file looks like, or see the rules-example files for more examples.
+These functions can be used in a "rules" file to specify advanced, non-default settings. They See the rules-template file to see what a minimum rules file looks like, or see the rules-example files for more examples.
 
 To use a rules file with glars, copy the template file somewhere and edit it to suit your needs. Make sure that the GLARS script can find your rules file by specifying its location in $RULES_FILE and make sure it has read permissions to be able to read it.
 

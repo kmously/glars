@@ -43,7 +43,7 @@
 
 
 # $EXTERNAL_IF is the interface that's connected to the Internet
-EXTERNAL_IF=eth1
+EXTERNAL_IF=eth0
 
 
 
@@ -72,6 +72,8 @@ LOCAL_SUBNET=192.168.31.0/24
 # It can be explicitly specified here if it is a static IP, or it can be 
 # queried from the $EXTERNAL_IF, using for example 'ifconfig' or 'ip addr'
 # if it is a dynamically assigned IP
+# Note that if you are going to override $EXTERNAL_IF in your rules file, you will need to
+# re-evaluate $PUBLIC_IP in your rules file as well
 PUBLIC_IP=$(ip ad show $EXTERNAL_IF |grep "inet "|sed -e 's/.* inet //g'|sed -e 's/\/.*//g')
 
 
@@ -79,7 +81,7 @@ PUBLIC_IP=$(ip ad show $EXTERNAL_IF |grep "inet "|sed -e 's/.* inet //g'|sed -e 
 # (Optional) Specify a rules file
 #
 # Advanced functionality and settings, such as port forwarding,
-# and bandwidth control can be specified in $RULES_FILE
+# access restrictions, and bandwidth control can be specified in $RULES_FILE
 # All variables declared above can also be overridden in $RULES_FILE
 # The $RULES_FILE must define a function called setup_rules_and_policies()
 # See the example rules files for more information on how to use rules files.
@@ -408,6 +410,7 @@ function clear_all_configurations {
 	iptables -X 
 	iptables -t nat -X
 	ipset flush
+	sleep 1;
 	ipset destroy
 	tc qdisc del dev $INTERNAL_IF root > /dev/null 2>&1
 	tc qdisc del dev $EXTERNAL_IF root > /dev/null 2>&1
@@ -1054,10 +1057,10 @@ function pre_initialize_rules_and_policies {
 	iptables -t nat -N KNOCKING_FORWARD
 
 	# Create empty sets
-        ipset -N blacklisted_ips nethash
-        ipset -N whitelisted_ips nethash
-	ipset -N denied_internet nethash
-	ipset -N dropped_internet nethash
+        ipset -N blacklisted_ips nethash -exist
+        ipset -N whitelisted_ips nethash -exist
+	ipset -N denied_internet nethash -exist
+	ipset -N dropped_internet nethash -exist
 
 	# Add default early rules
 	iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
@@ -1125,19 +1128,18 @@ function precheck {
 	fi
 }
 
-function main {
-	echo -e \
-"
-$COLOR
-┏━╸╻  ┏━┓┏━┓┏━┓   ╻ ╻┏━┓ ┏━┓
-┃╺┓┃  ┣━┫┣┳┛┗━┓   ┃┏┛┏━┛ ┃┃┃
-┗━┛┗━╸╹ ╹╹┗╸┗━┛   ┗┛ ┗━╸╹┗━┛
-$COLOREND
-"
+function pre_glars {
+	# dummy op
+	echo PRE-GLARS:
+}
 
-	if [[ -f "$RULES_FILE" ]]; then
-		source $RULES_FILE
-	fi;
+function post_glars {
+	# dummy op
+	echo POST-GLARS:
+}
+
+function main {
+
 
 	printf "Our public IP address is:$COLOR%20s $COLOREND\n" "$PUBLIC_IP"
 
@@ -1157,5 +1159,20 @@ $COLOREND
 	finalize_rules_and_policies;
 }
 
-precheck
+	echo -e \
+"
+$COLOR
+┏━╸╻  ┏━┓┏━┓┏━┓   ╻ ╻┏━┓ ┏━┓
+┃╺┓┃  ┣━┫┣┳┛┗━┓   ┃┏┛┏━┛ ┃┃┃
+┗━┛┗━╸╹ ╹╹┗╸┗━┛   ┗┛ ┗━╸╹┗━┛
+$COLOREND
+"
+
+if [[ -f "$RULES_FILE" ]]; then
+	source $RULES_FILE
+fi;
+
+precheck;
+pre_glars;
 main;
+post_glars;
