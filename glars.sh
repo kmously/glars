@@ -404,6 +404,12 @@ DOWNLOAD_CLASSES_HAVE_BEEN_INITIALIZED=0
 
 
 function clear_all_configurations {
+	# Before clearing settings, disable all forwarding
+	# So that anything that is restricted from the Internet
+	# Doesn't "get out" in the few seconds between clearing and
+	# re-applying the restrictions
+	echo 0 > /proc/sys/net/ipv4/ip_forward
+	echo 0 > /proc/sys/net/ipv6/conf/all/forwarding
 	echo -en "Resetting all configurations (iptables, tc and ipset)..."
 	iptables -F
 	iptables -F -t nat
@@ -487,9 +493,8 @@ function initialize_bw_classes {
 # Enables forwarding and NAT
 #
 function setup_gateway {
-	# Enable forwarding in the kernel
+
 	echo -en "Setting up NAT and packet forwarding..."
-	echo 1 > /proc/sys/net/ipv4/ip_forward
 
 	# MASQUERADE traffic leaving out on $EXTERNAL_IF 
 	# as well as traffic leaving out on $INTERNAL_IF if it's from 
@@ -498,6 +503,9 @@ function setup_gateway {
 	# e.g. smtp.domain.com:25
 	iptables -t nat -A POSTROUTING -o $EXTERNAL_IF -j MASQUERADE
 	iptables -t nat -A POSTROUTING -o $INTERNAL_IF -s $LOCAL_SUBNET -j MASQUERADE
+
+	# Enable forwarding in the kernel
+	echo 1 > /proc/sys/net/ipv4/ip_forward
 	echo -e "done"
 }
 
@@ -1145,7 +1153,6 @@ function main {
 
 	clear_all_configurations;
 
-	setup_gateway;
 
 	pre_initialize_rules_and_policies;
 
@@ -1157,6 +1164,9 @@ function main {
 
 	setup_blacklist_and_whitelist;
 	finalize_rules_and_policies;
+
+	# finally, allow access to the Internet
+	setup_gateway;
 }
 
 	echo -e \
