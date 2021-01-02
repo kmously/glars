@@ -1107,10 +1107,17 @@ function pre_initialize_rules_and_policies {
 	fi;
 #	iptables -A FORWARD -i $EXTERNAL_IF -m set --match-set whitelisted_ips src -j ACCEPT
 
+
+
 	if [ $LOG = 1 ] ; then
 		iptables -A INPUT -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -m set ! --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: DropBlacklistInput: "
 	fi;
 	iptables -A INPUT -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -m set ! --match-set whitelisted_ips src -j DROP
+
+	if [ $LOG = 1 ] ; then
+		iptables -A OUTPUT -o $EXTERNAL_IF -m set --match-set blacklisted_ips dst -m set ! --match-set whitelisted_ips dst -j LOG --log-prefix "GLARS: DropBlacklistOutput: "
+	fi;
+	iptables -A OUTPUT -o $EXTERNAL_IF -m set --match-set blacklisted_ips dst -m set ! --match-set whitelisted_ips dst -j DROP
 
 	if [ $LOG = 1 ] ; then
 		iptables -A FORWARD -i $EXTERNAL_IF -m set --match-set blacklisted_ips src -m set ! --match-set whitelisted_ips src -j LOG --log-prefix "GLARS: DropBlacklistFwd: "
