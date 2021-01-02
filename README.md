@@ -163,14 +163,16 @@ Duplicates a local port. For example, if your GLARS router is running an SSH ser
 
 
 
-### deny_internet
-Disallows traffic from an internal host or an internal subnet using REJECT. Local traffic to and from this host/subnet will be unaffected, but no traffic will be forwarded from this host/subnet to the external network.
+### no_internet
+Disallows traffic from an internal host or an internal subnet using REJECT. Local traffic to and from this host/subnet will be unaffected, but no traffic will be forwarded from this host/subnet to the external network (unless a 'grant_access_to_safe_zone' rule is given)
 
-**`deny_internet 192.168.31.19 `**
+**`no_internet 192.168.31.19 `**
 
+### no_internet_deny
+Alias for no_internet
 
-### drop_internet
-Disallows traffic from an internal host or an internal subnet using DROP. Local traffic to and from this host/subnet will be unaffected, but no traffic will be forwarded from this host/subnet to the external network.
+### no_internet_drop
+Disallows traffic from an internal host or an internal subnet using DROP. Local traffic to and from this host/subnet will be unaffected, but no traffic will be forwarded from this host/subnet to the external network (unless a 'grant_access_to_safe_zone' rule is given)
 
 **`drop_internet 192.168.31.19 `**
 
@@ -189,9 +191,11 @@ You can add as many domains as you wish.
 **`add_safe_destination safe-sites-1 upload.wikimedia.org`**
 
 
-### restrict_internet
-Similar to deny_internet, but also accepts a "protected zone" (basically, the name of ipset). This set of destinations will be reachable by the host. Any other destination will be treated similar to deny_internet.
-By default, protected zones (ipsets) are empty. You can add destinations to a protected zone using add_safe_destination
+### grant_access_to_safe_zone
+Allows a host/subnet to reach a "safe zone" (basically, a group of destinations, collected in an ipset of the same name). This is only effective if the host/subnet will have a no_internet() rule applied to it. If no such rule is applied to the host, then this function is a no-op, since the host can already reach all destinations anyway (except the blacklisted ones)
+
+By default, protected zones (ipsets) are empty. You can add destinations to a protected zone using add_safe_destination or any other method of populating the ipset (such as the 'ipset' feature in dnsmasq).
+
 You can add any number of hosts to a protected zone, and can add a host to any number of protected zones.
 
 NOTE: This feature is really intended to be used with the ipset feature in dnsmasq - that way subdomains can also be matched, and the list can be kept dynamically updated. This can be a very effective way of sandboxing certain untrusted devices (or people!)
@@ -199,7 +203,7 @@ NOTE: This feature is really intended to be used with the ipset feature in dnsma
 The following command, used with the 2 add_safe_destination examples above, will allow $my_android_device to reach nothing on the Internet except Wikipedia.
 
 
-**`restrict_internet $my_android_device safe-sites-1`**
+**`grant_access_to_safe_zone $my_android_device safe-sites-1`**
 
 
 
